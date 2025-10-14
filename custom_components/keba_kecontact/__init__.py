@@ -117,7 +117,7 @@ async def _check_and_create_coordinator(hass: HomeAssistant) -> None:
             DOMAIN,
             context={"source": "automatic"},
             data={
-                CONF_COORDINATOR_NAME: "Auto",
+                CONF_COORDINATOR_NAME: "Keba Load Balancing",
                 CONF_COORDINATOR_CHARGERS: charger_ids,
                 CONF_COORDINATOR_MAX_CURRENT: 32,
                 CONF_COORDINATOR_STRATEGY: "equal",

@@ -22,6 +22,7 @@ from .const import (
     CONF_COORDINATOR_CHARGERS,
     CONF_COORDINATOR_MAX_CURRENT,
     CONF_COORDINATOR_STRATEGY,
+    CONF_COORDINATOR_PRIORITIES,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
     COORDINATOR_STRATEGY_PRIORITY,
@@ -258,91 +259,4 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={
                 "info": "Set priority for each charger (1 = highest priority)"
             }
-        )
-
-
-class KebaChargingCoordinatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Keba Charging Coordinator."""
-
-    VERSION = 1
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle the initial step for adding a charging coordinator."""
-        errors: dict[str, str] = {}
-
-        existing_chargers = []
-        for entry in self._async_current_entries():
-            if CONF_IP_ADDRESS in entry.data:
-                existing_chargers.append({
-                    "label": entry.title,
-                    "value": entry.entry_id,
-                })
-
-        if len(existing_chargers) < 2:
-            return self.async_abort(reason="need_at_least_two_chargers")
-
-        if user_input is not None:
-            name = user_input[CONF_COORDINATOR_NAME]
-            chargers = user_input[CONF_COORDINATOR_CHARGERS]
-            max_current = user_input[CONF_COORDINATOR_MAX_CURRENT]
-            strategy = user_input[CONF_COORDINATOR_STRATEGY]
-
-            if len(chargers) < 2:
-                errors["base"] = "need_at_least_two_chargers"
-            else:
-                await self.async_set_unique_id(f"coordinator_{name}")
-                self._abort_if_unique_id_configured()
-
-                return self.async_create_entry(
-                    title=f"Charging Coordinator - {name}",
-                    data={
-                        CONF_COORDINATOR_NAME: name,
-                        CONF_COORDINATOR_CHARGERS: chargers,
-                        CONF_COORDINATOR_MAX_CURRENT: max_current,
-                        CONF_COORDINATOR_STRATEGY: strategy,
-                    },
-                )
-
-        data_schema = vol.Schema(
-            {
-                vol.Required(CONF_COORDINATOR_NAME, default="Home"): selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        type=selector.TextSelectorType.TEXT,
-                    ),
-                ),
-                vol.Required(CONF_COORDINATOR_CHARGERS): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=existing_chargers,
-                        multiple=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    ),
-                ),
-                vol.Required(CONF_COORDINATOR_MAX_CURRENT, default=32): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=6,
-                        max=63,
-                        step=1,
-                        unit_of_measurement="A",
-                        mode=selector.NumberSelectorMode.SLIDER,
-                    ),
-                ),
-                vol.Required(CONF_COORDINATOR_STRATEGY, default=COORDINATOR_STRATEGY_EQUAL): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            {"label": "Off", "value": COORDINATOR_STRATEGY_OFF},
-                            {"label": "Equal", "value": COORDINATOR_STRATEGY_EQUAL},
-                            {"label": "Priority", "value": COORDINATOR_STRATEGY_PRIORITY},
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    ),
-                ),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=data_schema,
-            errors=errors,
         )
