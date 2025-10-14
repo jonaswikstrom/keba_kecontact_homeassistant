@@ -29,6 +29,29 @@ from homeassistant.helpers.update_coordinator import (
 from .keba_kecontact.client import KebaClient
 
 from .const import DOMAIN
+from .sensor_diagnostic import (
+    KebaRFIDTagSensor,
+    KebaRFIDClassSensor,
+    KebaPowerFactorSensor,
+    KebaMaxCurrentPercentSensor,
+    KebaCurrentHWSensor,
+    KebaCurrentTimerSensor,
+    KebaTmoCTSensor,
+    KebaOutputSensor,
+    KebaInputSensor,
+    KebaError1Sensor,
+    KebaError2Sensor,
+    KebaStateRawSensor,
+    KebaPlugRawSensor,
+    KebaEnableSysRawSensor,
+    KebaEnableUserRawSensor,
+    KebaSessionIDSensor,
+    KebaEStartSensor,
+    KebaStartedSensor,
+    KebaEndedSensor,
+    KebaReasonSensor,
+    KebaUptimeSensor,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +71,8 @@ async def async_setup_entry(
     coordinator = KebaDataUpdateCoordinator(hass, client)
     await coordinator.async_config_entry_first_refresh()
 
+    data["coordinator"] = coordinator
+
     device_info = DeviceInfo(
         identifiers={(DOMAIN, ip_address)},
         name=f"Keba KeContact {ip_address}",
@@ -57,8 +82,13 @@ async def async_setup_entry(
         serial_number=coordinator.data.get("serial"),
     )
 
+    data["device_info"] = device_info
+
     entities = [
+        KebaStateDetailsSensor(coordinator, entry, device_info),
         KebaPowerSensor(coordinator, entry, device_info),
+        KebaSetCurrentSensor(coordinator, entry, device_info),
+        KebaEnergyTargetSensor(coordinator, entry, device_info),
         KebaSessionEnergySensor(coordinator, entry, device_info),
         KebaTotalEnergySensor(coordinator, entry, device_info),
         KebaStateSensor(coordinator, entry, device_info),
@@ -70,6 +100,27 @@ async def async_setup_entry(
         KebaVoltage2Sensor(coordinator, entry, device_info),
         KebaVoltage3Sensor(coordinator, entry, device_info),
         KebaMaxCurrentSensor(coordinator, entry, device_info),
+        KebaRFIDTagSensor(coordinator, entry, device_info),
+        KebaRFIDClassSensor(coordinator, entry, device_info),
+        KebaPowerFactorSensor(coordinator, entry, device_info),
+        KebaMaxCurrentPercentSensor(coordinator, entry, device_info),
+        KebaCurrentHWSensor(coordinator, entry, device_info),
+        KebaCurrentTimerSensor(coordinator, entry, device_info),
+        KebaTmoCTSensor(coordinator, entry, device_info),
+        KebaOutputSensor(coordinator, entry, device_info),
+        KebaInputSensor(coordinator, entry, device_info),
+        KebaError1Sensor(coordinator, entry, device_info),
+        KebaError2Sensor(coordinator, entry, device_info),
+        KebaStateRawSensor(coordinator, entry, device_info),
+        KebaPlugRawSensor(coordinator, entry, device_info),
+        KebaEnableSysRawSensor(coordinator, entry, device_info),
+        KebaEnableUserRawSensor(coordinator, entry, device_info),
+        KebaSessionIDSensor(coordinator, entry, device_info),
+        KebaEStartSensor(coordinator, entry, device_info),
+        KebaStartedSensor(coordinator, entry, device_info),
+        KebaEndedSensor(coordinator, entry, device_info),
+        KebaReasonSensor(coordinator, entry, device_info),
+        KebaUptimeSensor(coordinator, entry, device_info),
     ]
 
     async_add_entities(entities)
@@ -96,15 +147,42 @@ class KebaDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             report2 = await self._client.get_report_2()
             report3 = await self._client.get_report_3()
 
+            try:
+                report100 = await self._client.get_report_100()
+            except Exception as err:
+                _LOGGER.debug("Could not fetch report 100 (session info): %s", err)
+                report100 = None
+
             data = {
                 "product": report1.product,
                 "serial": report1.serial,
                 "firmware": report1.firmware,
+                "auth_required": report1.auth_required,
+                "dip_switch_1": report1.dip_switch_1,
+                "dip_switch_2": report1.dip_switch_2,
                 "state": report2.state,
+                "state_details": report2.state_details,
                 "plug": report2.plug,
+                "error_1": report2.error_1,
+                "error_2": report2.error_2,
                 "enable_sys": report2.enable_sys,
                 "enable_user": report2.enable_user,
                 "max_curr": report2.max_curr,
+                "max_curr_percent": report2.max_curr_percent,
+                "curr_hw": report2.curr_hw,
+                "curr_user": report2.curr_user,
+                "curr_fs": report2.curr_fs,
+                "tmo_fs": report2.tmo_fs,
+                "curr_timer": report2.curr_timer,
+                "tmo_ct": report2.tmo_ct,
+                "setenergy": report2.setenergy,
+                "output": report2.output,
+                "input": report2.input,
+                "failsafe_mode": report2.failsafe_mode,
+                "authreq": report2.authreq,
+                "authon": report2.authon,
+                "x2_phase_switch": report2.x2_phase_switch,
+                "sec": report2.sec,
                 "power_kw": report3.power_kw,
                 "energy_present_kwh": report3.energy_present_kwh,
                 "energy_total_kwh": report3.energy_total_kwh,
@@ -114,7 +192,19 @@ class KebaDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "i1": report3.i1,
                 "i2": report3.i2,
                 "i3": report3.i3,
+                "pf": report3.pf,
             }
+
+            if report100 is not None:
+                data.update({
+                    "session_id": report100.session_id,
+                    "rfid_tag": report100.rfid_tag,
+                    "rfid_class": report100.rfid_class,
+                    "e_start": report100.e_start_kwh,
+                    "started": report100.started,
+                    "ended": report100.ended,
+                    "reason": report100.reason,
+                })
 
             _LOGGER.debug(
                 "Charger %s: state=%s, plug=%s, power=%.2f kW, session_energy=%.2f kWh",
@@ -478,3 +568,75 @@ class KebaMaxCurrentSensor(KebaBaseSensor):
         """Return the state of the sensor."""
         max_curr = self.coordinator.data.get("max_curr")
         return max_curr / 1000.0 if max_curr is not None else None
+
+
+class KebaStateDetailsSensor(KebaBaseSensor):
+    """Sensor for detailed state description."""
+
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(
+        self,
+        coordinator: KebaDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info)
+        self._attr_unique_id = f"{entry.entry_id}_state_details"
+        self._attr_name = "Status"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get("state_details")
+
+
+class KebaSetCurrentSensor(KebaBaseSensor):
+    """Sensor for set current (user setting)."""
+
+    _attr_device_class = SensorDeviceClass.CURRENT
+    _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
+    _attr_suggested_display_precision = 1
+
+    def __init__(
+        self,
+        coordinator: KebaDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info)
+        self._attr_unique_id = f"{entry.entry_id}_set_current"
+        self._attr_name = "Set Current"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        curr_user = self.coordinator.data.get("curr_user")
+        return curr_user / 1000.0 if curr_user is not None else None
+
+
+class KebaEnergyTargetSensor(KebaBaseSensor):
+    """Sensor for energy target."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 2
+
+    def __init__(
+        self,
+        coordinator: KebaDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info)
+        self._attr_unique_id = f"{entry.entry_id}_energy_target"
+        self._attr_name = "Energy Target"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        setenergy = self.coordinator.data.get("setenergy")
+        return setenergy / 10000.0 if setenergy is not None else None

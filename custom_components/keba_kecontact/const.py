@@ -3,6 +3,8 @@
 DOMAIN = "keba_kecontact"
 
 CONF_IP_ADDRESS = "ip_address"
+CONF_RFID = "rfid"
+CONF_RFID_CLASS = "rfid_class"
 
 DEFAULT_SCAN_INTERVAL = 10
 

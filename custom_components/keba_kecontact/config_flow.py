@@ -8,12 +8,13 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_IP_ADDRESS
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .keba_kecontact import KebaClient, KebaUdpManager
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_RFID, CONF_RFID_CLASS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +33,14 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Keba KeContact."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> KebaKeContactOptionsFlow:
+        """Get the options flow for this handler."""
+        return KebaKeContactOptionsFlow(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -116,3 +125,47 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
         )
+
+
+class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for Keba KeContact."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage RFID options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_RFID,
+                    default=self.config_entry.options.get(
+                        CONF_RFID,
+                        self.config_entry.data.get(CONF_RFID, "")
+                    ),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
+                    ),
+                ),
+                vol.Optional(
+                    CONF_RFID_CLASS,
+                    default=self.config_entry.options.get(
+                        CONF_RFID_CLASS,
+                        self.config_entry.data.get(CONF_RFID_CLASS, "")
+                    ),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
+                    ),
+                ),
+            }
+        )
+
+        return self.async_show_form(step_id="init", data_schema=options_schema)

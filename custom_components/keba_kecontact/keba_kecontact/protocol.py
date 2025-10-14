@@ -105,6 +105,13 @@ class Report1:
         self.dip_switch_1 = data.get("DIP-Sw1")
         self.dip_switch_2 = data.get("DIP-Sw2")
 
+    @property
+    def auth_required(self) -> bool:
+        """Check if authentication is required (DIP-Sw2 bit 4)."""
+        if self.dip_switch_2 is not None:
+            return bool(self.dip_switch_2 & 0x10)
+        return False
+
     def __repr__(self):
         return f"Report1(product={self.product}, serial={self.serial}, firmware={self.firmware})"
 
@@ -132,6 +139,48 @@ class Report2:
         self.input = data.get("Input")
         self.serial = data.get("Serial")
         self.sec = data.get("Sec")
+
+    @property
+    def failsafe_mode(self) -> bool:
+        """Check if failsafe mode is active (Curr FS > 0)."""
+        return self.curr_fs is not None and self.curr_fs > 0
+
+    @property
+    def authreq(self) -> bool:
+        """Check if authentication is required (Input bit 4)."""
+        if self.input is not None:
+            return bool(self.input & 0x10)
+        return False
+
+    @property
+    def authon(self) -> bool:
+        """Check if authentication is enabled (Input bit 3)."""
+        if self.input is not None:
+            return bool(self.input & 0x08)
+        return False
+
+    @property
+    def x2_phase_switch(self) -> bool:
+        """Check X2 phase switch status (Input bit 5)."""
+        if self.input is not None:
+            return bool(self.input & 0x20)
+        return False
+
+    @property
+    def state_details(self) -> str:
+        """Get detailed state description."""
+        if self.state is None:
+            return "Unknown"
+
+        state_map = {
+            0: "Starting",
+            1: "Not ready for charging",
+            2: "Ready for charging",
+            3: "Charging",
+            4: "Error",
+            5: "Authorization rejected"
+        }
+        return state_map.get(self.state, f"Unknown state {self.state}")
 
     def __repr__(self):
         return f"Report2(state={self.state}, plug={self.plug}, max_curr={self.max_curr})"
@@ -194,6 +243,13 @@ class Report100:
         self.rfid_class = data.get("RFID class")
         self.serial = data.get("Serial")
         self.sec = data.get("Sec")
+
+    @property
+    def e_start_kwh(self) -> Optional[float]:
+        """Get start energy in kWh."""
+        if self.e_start is not None:
+            return self.e_start / 10000.0
+        return None
 
     def __repr__(self):
         return f"Report100(session_id={self.session_id}, rfid={self.rfid_tag})"

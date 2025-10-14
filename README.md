@@ -20,7 +20,10 @@
 
 - **Multiple Charger Support** - Control multiple Keba chargers on your network
 - **Real-time Monitoring** - Power, energy, voltage, current, and state sensors
+- **Binary Sensors** - Charging status, cable connection, and lock state
 - **Remote Control** - Enable/disable charging, set current limits, start/stop sessions
+- **RFID Authentication** - Lock/unlock control for chargers with authentication
+- **Display Messages** - Send text notifications to charger display
 - **UDP Communication** - Direct local communication via UDP (no cloud required)
 - **Shared UDP Handler** - Efficient management of multiple chargers using a single UDP socket
 
@@ -58,6 +61,18 @@ The integration will automatically discover the charger and create all entities.
 
 To add additional chargers, simply repeat the configuration process with each charger's IP address. The integration automatically manages the shared UDP communication.
 
+### RFID Configuration (Optional)
+
+If your charger requires RFID authentication, you can configure RFID tags:
+
+1. Go to **Settings** → **Devices & Services**
+2. Find your Keba KeContact integration
+3. Click **Configure**
+4. Enter your RFID tag and class (obtained from your charger)
+5. Click **Submit**
+
+The lock entity will only be created if authentication is required (DIP-Sw2 bit 4).
+
 ## Entities
 
 The integration creates the following entities for each charger:
@@ -73,12 +88,23 @@ The integration creates the following entities for each charger:
 - **Voltage Phase 1/2/3** - Voltage per phase (V)
 - **Max Current** - Current limit setting (A)
 
+### Binary Sensors
+
+- **Plugged on EV** - Is cable plugged into vehicle
+- **Charging** - Is currently charging
+- **Enable User** - User enable status
+- **Cable Plugged on Station** - Is cable plugged into station (disabled by default)
+- **Cable Locked** - Is cable locked (disabled by default)
+- **Enable System** - System enable status (diagnostic, disabled by default)
+
 ### Controls
 
 - **Charging Enabled** (Switch) - Enable/disable charging
 - **Current Limit** (Number) - Set charging current limit (6-32A)
 - **Start Charging** (Button) - Start a charging session
 - **Stop Charging** (Button) - Stop a charging session
+- **Authentication** (Lock) - Lock/unlock charging with RFID (only if auth required)
+- **Display** (Notify) - Send text messages to charger display (max 23 characters)
 
 ## State Values
 
@@ -146,14 +172,46 @@ automation:
   - alias: "Notify when charging complete"
     trigger:
       - platform: state
-        entity_id: sensor.keba_192_168_1_100_state
-        from: "charging"
-        to: "ready"
+        entity_id: binary_sensor.keba_192_168_1_100_charging
+        from: "on"
+        to: "off"
     action:
       - service: notify.mobile_app
         data:
           title: "Charging Complete"
           message: "Your vehicle has finished charging ({{ states('sensor.keba_192_168_1_100_session_energy') }} kWh)"
+```
+
+### Display Welcome Message When Cable Connected
+
+```yaml
+automation:
+  - alias: "Display welcome when cable plugged"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.keba_192_168_1_100_plugged_on_ev
+        to: "on"
+    action:
+      - service: notify.keba_192_168_1_100_display
+        data:
+          message: "Welcome! Charging..."
+```
+
+### Auto-lock After Charging
+
+```yaml
+automation:
+  - alias: "Lock charger after charging complete"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.keba_192_168_1_100_charging
+        from: "on"
+        to: "off"
+        for: "00:05:00"
+    action:
+      - service: lock.lock
+        target:
+          entity_id: lock.keba_192_168_1_100_authentication
 ```
 
 ## Troubleshooting
