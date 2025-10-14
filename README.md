@@ -1,8 +1,24 @@
-# Keba KeContact Home Assistant Integration
+<p align="center">
+  <img src="images/logo.png" alt="Keba KeContact Logo" width="400"/>
+</p>
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+<h1 align="center">Keba KeContact Home Assistant Integration</h1>
 
-Home Assistant integration for Keba KeContact P20/P30 electric vehicle chargers.
+<p align="center">
+  <a href="https://github.com/custom-components/hacs">
+    <img src="https://img.shields.io/badge/HACS-Custom-orange.svg" alt="HACS Custom"/>
+  </a>
+  <a href="https://github.com/jonaswikstrom/keba_kecontact_homeassistant/releases">
+    <img src="https://img.shields.io/github/v/release/jonaswikstrom/keba_kecontact_homeassistant" alt="GitHub Release"/>
+  </a>
+  <a href="https://github.com/jonaswikstrom/keba_kecontact_homeassistant/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/jonaswikstrom/keba_kecontact_homeassistant" alt="License"/>
+  </a>
+</p>
+
+<p align="center">
+  Home Assistant integration for Keba KeContact P20/P30 electric vehicle chargers.
+</p>
 
 ## Features
 
