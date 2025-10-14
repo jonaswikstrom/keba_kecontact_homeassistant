@@ -83,11 +83,13 @@ class KebaStartChargingButton(ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
+        _LOGGER.debug("Starting charging session on %s", self._client.ip_address)
         try:
             await self._client.start_charging()
+            _LOGGER.info("Started charging session on %s", self._client.ip_address)
             await self._coordinator.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to start charging: %s", err)
+            _LOGGER.error("Failed to start charging on %s: %s", self._client.ip_address, err)
             raise
 
     @property
@@ -116,11 +118,13 @@ class KebaStopChargingButton(ButtonEntity):
 
     async def async_press(self) -> None:
         """Handle the button press."""
+        _LOGGER.debug("Stopping charging session on %s", self._client.ip_address)
         try:
             await self._client.stop_charging()
+            _LOGGER.info("Stopped charging session on %s", self._client.ip_address)
             await self._coordinator.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to stop charging: %s", err)
+            _LOGGER.error("Failed to stop charging on %s: %s", self._client.ip_address, err)
             raise
 
     @property

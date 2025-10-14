@@ -90,12 +90,13 @@ class KebaDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Keba charger."""
+        _LOGGER.debug("Polling charger %s for updates", self._client.ip_address)
         try:
             report1 = await self._client.get_report_1()
             report2 = await self._client.get_report_2()
             report3 = await self._client.get_report_3()
 
-            return {
+            data = {
                 "product": report1.product,
                 "serial": report1.serial,
                 "firmware": report1.firmware,
@@ -114,7 +115,24 @@ class KebaDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "i2": report3.i2,
                 "i3": report3.i3,
             }
+
+            _LOGGER.debug(
+                "Charger %s: state=%s, plug=%s, power=%.2f kW, session_energy=%.2f kWh",
+                self._client.ip_address,
+                report2.state,
+                report2.plug,
+                report3.power_kw or 0,
+                report3.energy_present_kwh or 0,
+            )
+
+            return data
         except Exception as err:
+            _LOGGER.error(
+                "Failed to update charger %s: %s",
+                self._client.ip_address,
+                err,
+                exc_info=True,
+            )
             raise UpdateFailed(f"Error communicating with charger: {err}") from err
 
 

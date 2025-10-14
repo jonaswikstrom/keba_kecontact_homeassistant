@@ -159,6 +159,24 @@ automation:
 2. Restart the integration
 3. Check Home Assistant logs for errors: **Settings** → **System** → **Logs**
 
+### Enable Debug Logging
+
+For detailed troubleshooting, add to your `configuration.yaml`:
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.keba_kecontact: debug
+    keba_kecontact: debug
+```
+
+Then restart Home Assistant or reload the logger. Debug logs will show:
+- Polling activity every 10 seconds with charger state
+- UDP commands sent and responses received
+- Detailed error messages with stack traces
+- Connection lifecycle events
+
 ### Multiple Chargers Not Working
 
 The integration uses a shared UDP handler to support multiple chargers. If you experience issues:

@@ -96,12 +96,14 @@ class KebaCurrentLimitNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new value."""
+        _LOGGER.debug("Setting current limit on %s to %.1f A", self._client.ip_address, value)
         try:
             milliamps = int(value * 1000)
             await self._client.set_current(milliamps)
+            _LOGGER.info("Set current limit on %s to %.1f A (%d mA)", self._client.ip_address, value, milliamps)
             await self._coordinator.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to set current limit: %s", err)
+            _LOGGER.error("Failed to set current limit on %s to %.1f A: %s", self._client.ip_address, value, err)
             raise
 
     @property

@@ -89,20 +89,24 @@ class KebaChargerSwitch(SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on charging."""
+        _LOGGER.debug("Enabling charging on %s", self._client.ip_address)
         try:
             await self._client.enable()
+            _LOGGER.info("Enabled charging on %s", self._client.ip_address)
             await self._coordinator.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to enable charging: %s", err)
+            _LOGGER.error("Failed to enable charging on %s: %s", self._client.ip_address, err)
             raise
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off charging."""
+        _LOGGER.debug("Disabling charging on %s", self._client.ip_address)
         try:
             await self._client.disable()
+            _LOGGER.info("Disabled charging on %s", self._client.ip_address)
             await self._coordinator.async_request_refresh()
         except Exception as err:
-            _LOGGER.error("Failed to disable charging: %s", err)
+            _LOGGER.error("Failed to disable charging on %s: %s", self._client.ip_address, err)
             raise
 
     @property
