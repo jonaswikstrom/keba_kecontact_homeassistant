@@ -213,7 +213,25 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _apply_equal_strategy(self, active_chargers: dict[str, Any]) -> None:
         """Apply equal distribution strategy."""
-        per_charger_ma = int((self._max_current * 1000) / len(active_chargers))
+        min_current_ma = 6000
+        max_current_ma = 63000
+        available_current_ma = self._max_current * 1000
+        num_chargers = len(active_chargers)
+
+        min_total_required = min_current_ma * num_chargers
+
+        if available_current_ma < min_total_required:
+            _LOGGER.warning(
+                "Insufficient current: %d mA available, but %d chargers need minimum %d mA total (6A each). "
+                "Load balancing cannot proceed safely.",
+                available_current_ma,
+                num_chargers,
+                min_total_required
+            )
+            return
+
+        per_charger_ma = int(available_current_ma / num_chargers)
+        per_charger_ma = max(min_current_ma, min(per_charger_ma, max_current_ma))
 
         for entry_id, data in active_chargers.items():
             client = data["client"]
@@ -233,38 +251,53 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _apply_priority_strategy(self, active_chargers: dict[str, Any]) -> None:
         """Apply priority-based distribution strategy."""
+        min_current_ma = 6000
+        max_current_ma = 63000
+
         sorted_chargers = sorted(
             active_chargers.items(),
             key=lambda x: self._charger_priorities.get(x[0], 999)
         )
 
-        remaining_current_ma = self._max_current * 1000
-        min_current_ma = 6000
+        num_chargers = len(sorted_chargers)
+        min_total_required = min_current_ma * num_chargers
+        available_current_ma = self._max_current * 1000
 
-        for entry_id, data in sorted_chargers:
+        if available_current_ma < min_total_required:
+            _LOGGER.warning(
+                "Insufficient current: %d mA available, but %d chargers need minimum %d mA total (6A each). "
+                "Load balancing cannot proceed safely.",
+                available_current_ma,
+                num_chargers,
+                min_total_required
+            )
+            return
+
+        remaining_current_ma = available_current_ma
+        chargers_to_allocate = list(sorted_chargers)
+
+        for idx, (entry_id, data) in enumerate(chargers_to_allocate):
             client = data["client"]
+            chargers_left = num_chargers - idx
+            min_for_others = min_current_ma * (chargers_left - 1)
 
-            if remaining_current_ma >= min_current_ma:
-                allocated_current = min(remaining_current_ma, 63000)
-                try:
-                    await client.set_current(allocated_current)
-                    remaining_current_ma -= allocated_current
-                    _LOGGER.debug(
-                        "Set charger %s (priority %d) to %d mA",
-                        client.ip_address,
-                        self._charger_priorities.get(entry_id, 999),
-                        allocated_current
-                    )
-                except Exception as err:
-                    _LOGGER.error(
-                        "Failed to set current for charger %s: %s",
-                        client.ip_address,
-                        err
-                    )
-            else:
-                _LOGGER.warning(
-                    "Not enough current remaining for charger %s",
-                    client.ip_address
+            available_for_this = remaining_current_ma - min_for_others
+            allocated_current = max(min_current_ma, min(available_for_this, max_current_ma))
+
+            try:
+                await client.set_current(allocated_current)
+                remaining_current_ma -= allocated_current
+                _LOGGER.debug(
+                    "Set charger %s (priority %d) to %d mA",
+                    client.ip_address,
+                    self._charger_priorities.get(entry_id, 999),
+                    allocated_current
+                )
+            except Exception as err:
+                _LOGGER.error(
+                    "Failed to set current for charger %s: %s",
+                    client.ip_address,
+                    err
                 )
 
     async def set_max_current(self, current: int) -> None:

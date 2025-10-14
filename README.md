@@ -131,8 +131,10 @@ When you have multiple chargers, a Charging Coordinator is automatically created
 - **Max Current** (Number) - Total available current to distribute (6-63A)
 - **Strategy** (Select) - Load balancing strategy:
   - **Off** - No automatic balancing, manual control only
-  - **Equal** - Distribute current equally between active chargers
-  - **Priority** - Distribute based on priority (configurable in options)
+  - **Equal** - Distribute current equally between active chargers (minimum 6A per charger)
+  - **Priority** - Distribute based on priority, ensuring minimum 6A per charger (configurable in options)
+
+**Important:** Each charger requires a minimum of 6A to charge safely. If total available current is insufficient for all active chargers (e.g., 10A total with 2 chargers), load balancing will not activate and a warning is logged.
 
 #### Configuring Priority
 To set which charger gets priority when using Priority strategy:
@@ -216,6 +218,17 @@ data:
 
 # Company car (first charger) gets priority, guest car gets remainder
 ```
+
+**Example Priority Distribution:**
+- Total available: 32A
+- Charger 1 (priority 1): Gets up to 26A (32A - 6A reserved for charger 2)
+- Charger 2 (priority 2): Gets remaining 6A (minimum)
+
+**Example with Insufficient Current:**
+- Total available: 10A
+- 2 chargers need minimum 12A total (6A each)
+- Result: Load balancing skipped, warning logged
+- Solution: Increase max current to at least 12A or charge one car at a time
 
 ### Start Charging When Energy is Cheap
 
