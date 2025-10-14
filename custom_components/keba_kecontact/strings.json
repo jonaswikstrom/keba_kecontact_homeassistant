@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Keba KeContact",
+        "description": "Enter the IP address of your Keba KeContact charger.",
+        "data": {
+          "ip_address": "IP Address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the charger. Please check the IP address and ensure the charger is accessible on your network.",
+      "timeout_connect": "Connection timeout. The charger did not respond. Please verify the IP address and network connectivity.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This charger is already configured."
+    }
+  }
+}

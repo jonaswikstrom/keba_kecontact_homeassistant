@@ -1,0 +1,94 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Keba KeContact",
+        "description": "Enter the IP address of your Keba KeContact charger.",
+        "data": {
+          "ip_address": "IP Address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the charger. Please check the IP address and ensure the charger is accessible on your network.",
+      "timeout_connect": "Connection timeout. The charger did not respond. Please verify the IP address and network connectivity.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This charger is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power": {
+        "name": "Power"
+      },
+      "session_energy": {
+        "name": "Session Energy"
+      },
+      "total_energy": {
+        "name": "Total Energy"
+      },
+      "state": {
+        "name": "State",
+        "state": {
+          "starting": "Starting",
+          "not_ready": "Not Ready",
+          "ready": "Ready",
+          "charging": "Charging",
+          "error": "Error",
+          "auth_rejected": "Authorization Rejected"
+        }
+      },
+      "plug": {
+        "name": "Plug Status",
+        "state": {
+          "unplugged": "Unplugged",
+          "plugged_station": "Plugged on Station",
+          "plugged_station_locked": "Plugged on Station (Locked)",
+          "plugged_station_ev": "Plugged on Station and EV",
+          "plugged_station_ev_locked": "Plugged on Station and EV (Locked)"
+        }
+      },
+      "current_1": {
+        "name": "Current Phase 1"
+      },
+      "current_2": {
+        "name": "Current Phase 2"
+      },
+      "current_3": {
+        "name": "Current Phase 3"
+      },
+      "voltage_1": {
+        "name": "Voltage Phase 1"
+      },
+      "voltage_2": {
+        "name": "Voltage Phase 2"
+      },
+      "voltage_3": {
+        "name": "Voltage Phase 3"
+      },
+      "max_current": {
+        "name": "Max Current"
+      }
+    },
+    "switch": {
+      "charging_enabled": {
+        "name": "Charging Enabled"
+      }
+    },
+    "number": {
+      "current_limit": {
+        "name": "Current Limit"
+      }
+    },
+    "button": {
+      "start_charging": {
+        "name": "Start Charging"
+      },
+      "stop_charging": {
+        "name": "Stop Charging"
+      }
+    }
+  }
+}
