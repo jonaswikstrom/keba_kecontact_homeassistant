@@ -32,6 +32,8 @@ class KebaCommand(str, Enum):
     START = "start"
     STOP = "stop"
 
+    UNLOCK = "unlock"
+
     BROADCAST = "i"
 
 

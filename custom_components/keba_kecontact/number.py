@@ -68,7 +68,7 @@ class KebaCurrentLimitNumber(NumberEntity):
 
     _attr_mode = NumberMode.SLIDER
     _attr_native_min_value = 6.0
-    _attr_native_max_value = 32.0
+    _attr_native_max_value = 63.0
     _attr_native_step = 1.0
     _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
 

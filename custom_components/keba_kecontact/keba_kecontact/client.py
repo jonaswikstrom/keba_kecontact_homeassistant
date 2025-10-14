@@ -213,6 +213,13 @@ class KebaClient:
         command = KebaCommand.DISPLAY_TEXT.replace("{text}", text)
         await self.send_command(command)
 
+    async def unlock_socket(self):
+        """Unlock the socket to release the cable.
+
+        Note: The charging process should be stopped before unlocking.
+        """
+        await self.send_command(KebaCommand.UNLOCK)
+
     def _on_message(self, message: UdpMessage):
         """Internal callback for received messages.
 

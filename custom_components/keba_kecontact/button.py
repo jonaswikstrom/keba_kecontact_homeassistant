@@ -58,6 +58,7 @@ async def async_setup_entry(
     entities = [
         KebaStartChargingButton(coordinator, entry, device_info, client),
         KebaStopChargingButton(coordinator, entry, device_info, client),
+        KebaUnlockSocketButton(coordinator, entry, device_info, client),
     ]
 
     async_add_entities(entities)
@@ -125,6 +126,41 @@ class KebaStopChargingButton(ButtonEntity):
             await self._coordinator.async_request_refresh()
         except Exception as err:
             _LOGGER.error("Failed to stop charging on %s: %s", self._client.ip_address, err)
+            raise
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        return self._coordinator.last_update_success
+
+
+class KebaUnlockSocketButton(ButtonEntity):
+    """Button to unlock the socket and release the cable."""
+
+    def __init__(
+        self,
+        coordinator: KebaDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+        client: KebaClient,
+    ) -> None:
+        """Initialize the button."""
+        self._coordinator = coordinator
+        self._client = client
+        self._attr_device_info = device_info
+        self._attr_unique_id = f"{entry.entry_id}_unlock_socket"
+        self._attr_name = "Unlock Socket"
+        self._attr_icon = "mdi:lock-open-variant"
+
+    async def async_press(self) -> None:
+        """Handle the button press."""
+        _LOGGER.debug("Unlocking socket on %s", self._client.ip_address)
+        try:
+            await self._client.unlock_socket()
+            _LOGGER.info("Unlocked socket on %s", self._client.ip_address)
+            await self._coordinator.async_request_refresh()
+        except Exception as err:
+            _LOGGER.error("Failed to unlock socket on %s: %s", self._client.ip_address, err)
             raise
 
     @property
