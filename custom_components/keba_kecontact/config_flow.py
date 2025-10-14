@@ -41,38 +41,53 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             ip_address = user_input[CONF_IP_ADDRESS]
+            _LOGGER.debug("Attempting to configure Keba charger at %s", ip_address)
 
             await self.async_set_unique_id(ip_address)
             self._abort_if_unique_id_configured()
 
             manager = KebaUdpManager.get_instance()
             if not manager.is_started:
+                _LOGGER.debug("Starting UDP manager for configuration")
                 try:
                     await manager.start()
+                    _LOGGER.debug("UDP manager started successfully")
                 except Exception as err:
-                    _LOGGER.error("Failed to start UDP manager: %s", err)
+                    _LOGGER.error(
+                        "Failed to start UDP manager during configuration: %s",
+                        err,
+                        exc_info=True,
+                    )
                     errors["base"] = "cannot_connect"
                     return self.async_show_form(
                         step_id="user",
                         data_schema=STEP_USER_DATA_SCHEMA,
                         errors=errors,
                     )
+            else:
+                _LOGGER.debug("UDP manager already running")
 
             client = KebaClient(ip_address, use_global_handler=True)
 
             try:
+                _LOGGER.debug("Connecting to charger at %s", ip_address)
                 await client.connect()
+
+                _LOGGER.debug("Requesting product info from %s", ip_address)
                 report1 = await client.get_report_1()
 
                 _LOGGER.info(
-                    "Successfully validated connection to %s (Serial: %s)",
+                    "Successfully validated connection to %s (Serial: %s, Product: %s, Firmware: %s)",
                     ip_address,
                     report1.serial,
+                    report1.product,
+                    report1.firmware,
                 )
 
                 title = f"Keba KeContact ({report1.serial})"
 
                 await client.disconnect()
+                _LOGGER.debug("Disconnected from charger after successful validation")
 
                 return self.async_create_entry(
                     title=title,
@@ -80,11 +95,19 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
 
             except TimeoutError:
-                _LOGGER.error("Timeout connecting to charger at %s", ip_address)
+                _LOGGER.error(
+                    "Timeout connecting to charger at %s - charger did not respond within 2 seconds",
+                    ip_address,
+                )
                 errors["base"] = "timeout_connect"
                 await client.disconnect()
             except Exception as err:
-                _LOGGER.error("Failed to connect to charger at %s: %s", ip_address, err)
+                _LOGGER.error(
+                    "Failed to connect to charger at %s: %s",
+                    ip_address,
+                    err,
+                    exc_info=True,
+                )
                 errors["base"] = "cannot_connect"
                 await client.disconnect()
 
