@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from keba_kecontact.client import KebaClient
+from .keba_kecontact.client import KebaClient
 
 from .const import DOMAIN
 from .sensor import KebaDataUpdateCoordinator

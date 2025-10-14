@@ -9,12 +9,12 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from keba_kecontact import KebaClient, KebaUdpManager
+from .keba_kecontact import KebaClient, KebaUdpManager
 
 from .const import CONF_IP_ADDRESS, DOMAIN
 
 if TYPE_CHECKING:
-    from keba_kecontact.client import KebaClient as KebaClientType
+    from .keba_kecontact.client import KebaClient as KebaClientType
 
 _LOGGER = logging.getLogger(__name__)
 

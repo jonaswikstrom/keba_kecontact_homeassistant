@@ -11,7 +11,7 @@ from homeassistant.const import CONF_IP_ADDRESS
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
-from keba_kecontact import KebaClient, KebaUdpManager
+from .keba_kecontact import KebaClient, KebaUdpManager
 
 from .const import DOMAIN
 

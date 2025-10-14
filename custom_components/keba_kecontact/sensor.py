@@ -26,7 +26,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from keba_kecontact.client import KebaClient
+from .keba_kecontact.client import KebaClient
 
 from .const import DOMAIN
 

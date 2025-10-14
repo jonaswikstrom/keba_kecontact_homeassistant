@@ -6,6 +6,6 @@
   "documentation": "https://github.com/jonaswikstrom/keba_kecontact_homeassistant",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "requirements": ["keba-kecontact>=0.1.0"],
+  "requirements": [],
   "version": "1.0.0"
 }
