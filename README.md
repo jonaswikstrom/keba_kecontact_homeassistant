@@ -20,7 +20,7 @@ Home Assistant integration for Keba KeContact P20/P30 electric vehicle chargers.
 2. Click on "Integrations"
 3. Click the three dots in the top right corner
 4. Select "Custom repositories"
-5. Add this repository URL: `https://github.com/jonaswikstrom/Keba_Kecontact_Homeassistant`
+5. Add this repository URL: `https://github.com/jonaswikstrom/keba_kecontact_homeassistant`
 6. Select category "Integration"
 7. Click "Add"
 8. Search for "Keba KeContact" and install
@@ -179,12 +179,12 @@ The integration polls the chargers every 10 seconds by default. This provides a 
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/jonaswikstrom/Keba_Kecontact_Homeassistant/issues)
-- **Framework**: [Keba KeContact Python Framework](https://github.com/jonaswikstrom/Keba_KeContact)
+- **Issues**: [GitHub Issues](https://github.com/jonaswikstrom/keba_kecontact_homeassistant/issues)
+- **Framework**: [Keba KeContact Python Framework](https://github.com/jonaswikstrom/keba_kecontact)
 
 ## Credits
 
-This integration is built on the [Keba KeContact Python Framework](https://github.com/jonaswikstrom/Keba_KeContact).
+This integration is built on the [Keba KeContact Python Framework](https://github.com/jonaswikstrom/keba_kecontact).
 
 ## License
 
