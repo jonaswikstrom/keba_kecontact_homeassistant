@@ -23,6 +23,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 SCAN_INTERVAL = timedelta(seconds=10)
+MAX_DISPLAY_LENGTH = 23
 
 
 class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -233,6 +234,8 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         per_charger_ma = int(available_current_ma / num_chargers)
         per_charger_ma = max(min_current_ma, min(per_charger_ma, max_current_ma))
 
+        per_charger_a = per_charger_ma / 1000
+
         for entry_id, data in active_chargers.items():
             client = data["client"]
             try:
@@ -242,6 +245,10 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     client.ip_address,
                     per_charger_ma
                 )
+
+                message = f"LoadBal Equal {int(per_charger_a)}A"
+                await self._send_display_message(client, message)
+
             except Exception as err:
                 _LOGGER.error(
                     "Failed to set current for charger %s: %s",
@@ -284,15 +291,22 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             available_for_this = remaining_current_ma - min_for_others
             allocated_current = max(min_current_ma, min(available_for_this, max_current_ma))
 
+            priority = self._charger_priorities.get(entry_id, 999)
+
             try:
                 await client.set_current(allocated_current)
                 remaining_current_ma -= allocated_current
                 _LOGGER.debug(
                     "Set charger %s (priority %d) to %d mA",
                     client.ip_address,
-                    self._charger_priorities.get(entry_id, 999),
+                    priority,
                     allocated_current
                 )
+
+                allocated_a = int(allocated_current / 1000)
+                message = f"LoadBal Prio{priority} {allocated_a}A"
+                await self._send_display_message(client, message)
+
             except Exception as err:
                 _LOGGER.error(
                     "Failed to set current for charger %s: %s",
@@ -315,6 +329,17 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._charger_priorities[entry_id] = priority
         if self._strategy == COORDINATOR_STRATEGY_PRIORITY:
             await self._apply_load_balancing()
+
+    async def _send_display_message(self, client, message: str) -> None:
+        """Send a message to charger display, truncating if necessary."""
+        if len(message) > MAX_DISPLAY_LENGTH:
+            message = message[:MAX_DISPLAY_LENGTH]
+
+        try:
+            await client.display_text(message)
+            _LOGGER.debug("Sent display message: %s", message)
+        except Exception as err:
+            _LOGGER.debug("Failed to send display message: %s", err)
 
     @property
     def name(self) -> str:
