@@ -170,6 +170,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up Keba KeContact binary sensor based on a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
+
+    if data.get("type") == "charging_coordinator":
+        from .coordinator_binary_sensor import async_setup_entry as async_setup_coordinator_binary_sensors
+        return await async_setup_coordinator_binary_sensors(hass, entry, async_add_entities)
+
     coordinator = data["coordinator"]
     device_info = data["device_info"]
 

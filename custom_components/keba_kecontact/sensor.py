@@ -65,6 +65,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up Keba KeContact sensor based on a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
+
+    if data.get("type") == "charging_coordinator":
+        from .coordinator_sensor import async_setup_entry as async_setup_coordinator_sensors
+        return await async_setup_coordinator_sensors(hass, entry, async_add_entities)
+
     client: KebaClient = data["client"]
     ip_address: str = data["ip_address"]
 

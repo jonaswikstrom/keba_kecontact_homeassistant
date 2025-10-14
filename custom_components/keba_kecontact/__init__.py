@@ -10,8 +10,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .keba_kecontact import KebaClient, KebaUdpManager
+from .coordinator import KebaChargingCoordinator
 
-from .const import CONF_IP_ADDRESS, DOMAIN
+from .const import (
+    CONF_IP_ADDRESS,
+    CONF_COORDINATOR_NAME,
+    CONF_COORDINATOR_CHARGERS,
+    CONF_COORDINATOR_MAX_CURRENT,
+    CONF_COORDINATOR_STRATEGY,
+    CONF_COORDINATOR_PRIORITIES,
+    DOMAIN,
+)
 
 if TYPE_CHECKING:
     from .keba_kecontact.client import KebaClient as KebaClientType
@@ -23,6 +32,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.SWITCH,
     Platform.NUMBER,
+    Platform.SELECT,
     Platform.BUTTON,
     Platform.LOCK,
     Platform.NOTIFY,
@@ -31,6 +41,16 @@ PLATFORMS: list[Platform] = [
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Keba KeContact from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
+
+    if CONF_COORDINATOR_NAME in entry.data:
+        return await async_setup_coordinator_entry(hass, entry)
+    else:
+        return await async_setup_charger_entry(hass, entry)
+
+
+async def async_setup_charger_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up a Keba charger from a config entry."""
     ip_address = entry.data[CONF_IP_ADDRESS]
 
     manager = KebaUdpManager.get_instance()
@@ -61,7 +81,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Failed to connect to charger at {ip_address}: {err}"
         ) from err
 
-    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
         "manager": manager,
@@ -70,21 +89,104 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    await _check_and_create_coordinator(hass)
+
     return True
+
+
+async def _check_and_create_coordinator(hass: HomeAssistant) -> None:
+    """Check if we should create a coordinator automatically."""
+    charger_entries = []
+    coordinator_exists = False
+
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if CONF_IP_ADDRESS in entry.data:
+            charger_entries.append(entry)
+        elif CONF_COORDINATOR_NAME in entry.data:
+            coordinator_exists = True
+
+    if len(charger_entries) >= 2 and not coordinator_exists:
+        _LOGGER.info(
+            "Found %d chargers without coordinator, creating automatic coordinator",
+            len(charger_entries)
+        )
+
+        charger_ids = [entry.entry_id for entry in charger_entries]
+
+        await hass.config_entries.flow.async_init(
+            DOMAIN,
+            context={"source": "automatic"},
+            data={
+                CONF_COORDINATOR_NAME: "Auto",
+                CONF_COORDINATOR_CHARGERS: charger_ids,
+                CONF_COORDINATOR_MAX_CURRENT: 32,
+                CONF_COORDINATOR_STRATEGY: "equal",
+            },
+        )
+
+
+async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up a Keba Charging Coordinator from a config entry."""
+    name = entry.data[CONF_COORDINATOR_NAME]
+    charger_entry_ids = entry.data[CONF_COORDINATOR_CHARGERS]
+    max_current = entry.data[CONF_COORDINATOR_MAX_CURRENT]
+    strategy = entry.data[CONF_COORDINATOR_STRATEGY]
+
+    priorities = entry.options.get(CONF_COORDINATOR_PRIORITIES, {})
+
+    coordinator = KebaChargingCoordinator(
+        hass,
+        name,
+        charger_entry_ids,
+        max_current,
+        strategy,
+        priorities,
+    )
+
+    await coordinator.async_start()
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "type": "charging_coordinator",
+        "config_entry": entry,
+    }
+
+    entry.async_on_unload(entry.add_update_listener(async_reload_coordinator_entry))
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    _LOGGER.info(
+        "Set up Keba Charging Coordinator '%s' managing %d chargers",
+        name,
+        len(charger_entry_ids),
+    )
+
+    return True
+
+
+async def async_reload_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload coordinator when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         data = hass.data[DOMAIN].pop(entry.entry_id)
-        client: KebaClientType = data["client"]
-        manager: KebaUdpManager = data["manager"]
 
-        await client.disconnect()
-        _LOGGER.info("Disconnected from charger at %s", data["ip_address"])
+        if data.get("type") == "charging_coordinator":
+            coordinator: KebaChargingCoordinator = data["coordinator"]
+            await coordinator.async_stop()
+            _LOGGER.info("Stopped Keba Charging Coordinator")
+        else:
+            client: KebaClientType = data["client"]
+            manager: KebaUdpManager = data["manager"]
 
-        if manager.client_count == 0:
-            await manager.stop()
-            _LOGGER.info("Stopped global Keba UDP manager (no more clients)")
+            await client.disconnect()
+            _LOGGER.info("Disconnected from charger at %s", data["ip_address"])
+
+            if manager.client_count == 0:
+                await manager.stop()
+                _LOGGER.info("Stopped global Keba UDP manager (no more clients)")
 
     return unload_ok

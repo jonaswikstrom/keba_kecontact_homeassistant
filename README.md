@@ -19,7 +19,9 @@
 ## Features
 
 - **Multiple Charger Support** - Control multiple Keba chargers on your network
+- **Automatic Load Balancing** - Intelligent current distribution between multiple chargers
 - **Real-time Monitoring** - Power, energy, voltage, current, and state sensors
+- **Aggregated Statistics** - Combined power and energy metrics across all chargers
 - **Binary Sensors** - Charging status, cable connection, and lock state
 - **Remote Control** - Enable/disable charging, set current limits, start/stop sessions
 - **RFID Authentication** - Lock/unlock control for chargers with authentication
@@ -61,6 +63,11 @@ The integration will automatically discover the charger and create all entities.
 
 To add additional chargers, simply repeat the configuration process with each charger's IP address. The integration automatically manages the shared UDP communication.
 
+**Automatic Load Balancing**: When you add a second charger, a **Charging Coordinator** is automatically created! This coordinator:
+- Manages load balancing between all your chargers
+- Provides aggregated statistics (total power, energy, etc.)
+- Prevents overload by distributing available current intelligently
+
 ### RFID Configuration (Optional)
 
 If your charger requires RFID authentication, you can configure RFID tags:
@@ -77,7 +84,7 @@ The lock entity will only be created if authentication is required (DIP-Sw2 bit 
 
 The integration creates the following entities for each charger:
 
-### Sensors
+### Sensors (Per Charger)
 
 - **Power** - Current power consumption (kW)
 - **Session Energy** - Energy consumed in current session (kWh)
@@ -88,7 +95,7 @@ The integration creates the following entities for each charger:
 - **Voltage Phase 1/2/3** - Voltage per phase (V)
 - **Max Current** - Current limit setting (A)
 
-### Binary Sensors
+### Binary Sensors (Per Charger)
 
 - **Plugged on EV** - Is cable plugged into vehicle
 - **Charging** - Is currently charging
@@ -97,7 +104,7 @@ The integration creates the following entities for each charger:
 - **Cable Locked** - Is cable locked (disabled by default)
 - **Enable System** - System enable status (diagnostic, disabled by default)
 
-### Controls
+### Controls (Per Charger)
 
 - **Charging Enabled** (Switch) - Enable/disable charging
 - **Current Limit** (Number) - Set charging current limit (6-32A)
@@ -105,6 +112,34 @@ The integration creates the following entities for each charger:
 - **Stop Charging** (Button) - Stop a charging session
 - **Authentication** (Lock) - Lock/unlock charging with RFID (only if auth required)
 - **Display** (Notify) - Send text messages to charger display (max 23 characters)
+
+### Charging Coordinator (Automatic with 2+ Chargers)
+
+When you have multiple chargers, a Charging Coordinator is automatically created with these entities:
+
+#### Coordinator Sensors
+- **Total Power** - Combined power consumption from all chargers (kW)
+- **Total Session Energy** - Combined session energy from all chargers (kWh)
+- **Total Energy** - Combined lifetime energy from all chargers (kWh)
+- **Active Chargers** - Number of chargers currently charging
+- **Current Distribution** - Description of how current is distributed
+
+#### Coordinator Binary Sensors
+- **Load Balancing Active** - Shows if load balancing is actively distributing current (on when 2+ chargers are charging and strategy is not "Off")
+
+#### Coordinator Controls
+- **Max Current** (Number) - Total available current to distribute (6-63A)
+- **Strategy** (Select) - Load balancing strategy:
+  - **Off** - No automatic balancing, manual control only
+  - **Equal** - Distribute current equally between active chargers
+  - **Priority** - Distribute based on priority (configurable in options)
+
+#### Configuring Priority
+To set which charger gets priority when using Priority strategy:
+1. Go to **Settings** → **Devices & Services** → **Keba KeContact**
+2. Click **Configure** on the Charging Coordinator device
+3. Set priority numbers for each charger (1 = highest priority, 2 = second, etc.)
+4. Lower priority number = gets current first
 
 ## State Values
 
@@ -126,6 +161,61 @@ The integration creates the following entities for each charger:
 - `plugged_station_ev_locked` - Cable locked to both station and vehicle
 
 ## Example Automations
+
+### Load Balancing Based on Main Fuse Capacity
+
+```yaml
+automation:
+  - alias: "Set charging coordinator max current based on house load"
+    trigger:
+      - platform: state
+        entity_id: sensor.house_power_consumption
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.keba_coordinator_max_current
+        data:
+          value: >
+            {% set main_fuse = 25 %}
+            {% set house_load_a = (states('sensor.house_power_consumption') | float / 230) %}
+            {% set available = main_fuse - house_load_a %}
+            {{ [6, [available, 32] | min] | max | round(0) }}
+```
+
+### Smart Equal Distribution for Two Chargers
+
+With the coordinator strategy set to "Equal", both chargers automatically share available current:
+
+```yaml
+# Set coordinator to equal distribution mode
+service: select.select_option
+target:
+  entity_id: select.keba_coordinator_strategy
+data:
+  option: "equal"
+
+# Set total available current (e.g., 32A main fuse)
+service: number.set_value
+target:
+  entity_id: number.keba_coordinator_max_current
+data:
+  value: 32
+```
+
+Now when both cars charge, each gets 16A automatically!
+
+### Priority Charging for Company vs Guest Car
+
+```yaml
+# Set coordinator to priority mode
+service: select.select_option
+target:
+  entity_id: select.keba_coordinator_strategy
+data:
+  option: "priority"
+
+# Company car (first charger) gets priority, guest car gets remainder
+```
 
 ### Start Charging When Energy is Cheap
 

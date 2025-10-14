@@ -6,6 +6,16 @@ CONF_IP_ADDRESS = "ip_address"
 CONF_RFID = "rfid"
 CONF_RFID_CLASS = "rfid_class"
 
+CONF_COORDINATOR_NAME = "coordinator_name"
+CONF_COORDINATOR_CHARGERS = "coordinator_chargers"
+CONF_COORDINATOR_MAX_CURRENT = "coordinator_max_current"
+CONF_COORDINATOR_STRATEGY = "coordinator_strategy"
+CONF_COORDINATOR_PRIORITIES = "coordinator_priorities"
+
+COORDINATOR_STRATEGY_OFF = "off"
+COORDINATOR_STRATEGY_EQUAL = "equal"
+COORDINATOR_STRATEGY_PRIORITY = "priority"
+
 DEFAULT_SCAN_INTERVAL = 10
 
 ATTR_CURRENT_LIMIT = "current_limit"

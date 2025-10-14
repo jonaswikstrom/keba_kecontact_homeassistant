@@ -14,7 +14,18 @@ from homeassistant.helpers import selector
 
 from .keba_kecontact import KebaClient, KebaUdpManager
 
-from .const import DOMAIN, CONF_RFID, CONF_RFID_CLASS
+from .const import (
+    DOMAIN,
+    CONF_RFID,
+    CONF_RFID_CLASS,
+    CONF_COORDINATOR_NAME,
+    CONF_COORDINATOR_CHARGERS,
+    CONF_COORDINATOR_MAX_CURRENT,
+    CONF_COORDINATOR_STRATEGY,
+    COORDINATOR_STRATEGY_OFF,
+    COORDINATOR_STRATEGY_EQUAL,
+    COORDINATOR_STRATEGY_PRIORITY,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,6 +137,28 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_automatic(
+        self, data: dict[str, Any]
+    ) -> FlowResult:
+        """Handle automatic coordinator creation."""
+        name = data[CONF_COORDINATOR_NAME]
+        chargers = data[CONF_COORDINATOR_CHARGERS]
+        max_current = data[CONF_COORDINATOR_MAX_CURRENT]
+        strategy = data[CONF_COORDINATOR_STRATEGY]
+
+        await self.async_set_unique_id(f"coordinator_{name}")
+        self._abort_if_unique_id_configured()
+
+        return self.async_create_entry(
+            title=f"Charging Coordinator - {name}",
+            data={
+                CONF_COORDINATOR_NAME: name,
+                CONF_COORDINATOR_CHARGERS: chargers,
+                CONF_COORDINATOR_MAX_CURRENT: max_current,
+                CONF_COORDINATOR_STRATEGY: strategy,
+            },
+        )
+
 
 class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Keba KeContact."""
@@ -137,7 +170,16 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage RFID options."""
+        """Manage options for charger or coordinator."""
+        if CONF_COORDINATOR_NAME in self.config_entry.data:
+            return await self.async_step_coordinator_options(user_input)
+        else:
+            return await self.async_step_charger_options(user_input)
+
+    async def async_step_charger_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage RFID options for individual charger."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
@@ -168,4 +210,139 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
             }
         )
 
-        return self.async_show_form(step_id="init", data_schema=options_schema)
+        return self.async_show_form(step_id="charger_options", data_schema=options_schema)
+
+    async def async_step_coordinator_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage priority options for coordinator."""
+        if user_input is not None:
+            priorities = {}
+            for key, value in user_input.items():
+                if key.startswith("priority_"):
+                    entry_id = key.replace("priority_", "")
+                    priorities[entry_id] = value
+
+            return self.async_create_entry(title="", data={CONF_COORDINATOR_PRIORITIES: priorities})
+
+        charger_ids = self.config_entry.data[CONF_COORDINATOR_CHARGERS]
+        current_priorities = self.config_entry.options.get(CONF_COORDINATOR_PRIORITIES, {})
+
+        hass = self.hass
+        options_dict = {}
+
+        for idx, entry_id in enumerate(charger_ids):
+            if entry_id in hass.data.get(DOMAIN, {}):
+                charger_entry = hass.config_entries.async_get_entry(entry_id)
+                if charger_entry:
+                    charger_name = charger_entry.title
+                    default_priority = current_priorities.get(entry_id, idx + 1)
+
+                    options_dict[vol.Required(
+                        f"priority_{entry_id}",
+                        default=default_priority
+                    )] = selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            max=len(charger_ids),
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    )
+
+        options_schema = vol.Schema(options_dict)
+
+        return self.async_show_form(
+            step_id="coordinator_options",
+            data_schema=options_schema,
+            description_placeholders={
+                "info": "Set priority for each charger (1 = highest priority)"
+            }
+        )
+
+
+class KebaChargingCoordinatorConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Keba Charging Coordinator."""
+
+    VERSION = 1
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the initial step for adding a charging coordinator."""
+        errors: dict[str, str] = {}
+
+        existing_chargers = []
+        for entry in self._async_current_entries():
+            if CONF_IP_ADDRESS in entry.data:
+                existing_chargers.append({
+                    "label": entry.title,
+                    "value": entry.entry_id,
+                })
+
+        if len(existing_chargers) < 2:
+            return self.async_abort(reason="need_at_least_two_chargers")
+
+        if user_input is not None:
+            name = user_input[CONF_COORDINATOR_NAME]
+            chargers = user_input[CONF_COORDINATOR_CHARGERS]
+            max_current = user_input[CONF_COORDINATOR_MAX_CURRENT]
+            strategy = user_input[CONF_COORDINATOR_STRATEGY]
+
+            if len(chargers) < 2:
+                errors["base"] = "need_at_least_two_chargers"
+            else:
+                await self.async_set_unique_id(f"coordinator_{name}")
+                self._abort_if_unique_id_configured()
+
+                return self.async_create_entry(
+                    title=f"Charging Coordinator - {name}",
+                    data={
+                        CONF_COORDINATOR_NAME: name,
+                        CONF_COORDINATOR_CHARGERS: chargers,
+                        CONF_COORDINATOR_MAX_CURRENT: max_current,
+                        CONF_COORDINATOR_STRATEGY: strategy,
+                    },
+                )
+
+        data_schema = vol.Schema(
+            {
+                vol.Required(CONF_COORDINATOR_NAME, default="Home"): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.TEXT,
+                    ),
+                ),
+                vol.Required(CONF_COORDINATOR_CHARGERS): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=existing_chargers,
+                        multiple=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    ),
+                ),
+                vol.Required(CONF_COORDINATOR_MAX_CURRENT, default=32): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=6,
+                        max=63,
+                        step=1,
+                        unit_of_measurement="A",
+                        mode=selector.NumberSelectorMode.SLIDER,
+                    ),
+                ),
+                vol.Required(CONF_COORDINATOR_STRATEGY, default=COORDINATOR_STRATEGY_EQUAL): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            {"label": "Off", "value": COORDINATOR_STRATEGY_OFF},
+                            {"label": "Equal", "value": COORDINATOR_STRATEGY_EQUAL},
+                            {"label": "Priority", "value": COORDINATOR_STRATEGY_PRIORITY},
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    ),
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=data_schema,
+            errors=errors,
+        )
