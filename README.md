@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="images/logo.png" alt="Keba KeContact Logo" width="400"/>
-</p>
-
 <h1 align="center">Keba KeContact Home Assistant Integration</h1>
 
 <p align="center">

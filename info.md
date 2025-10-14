@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/jonaswikstrom/keba_kecontact_homeassistant/main/images/logo.png" alt="Keba KeContact" width="300"/>
-</p>
-
 # Keba KeContact Integration
 
 Control and monitor your Keba KeContact EV charger directly from Home Assistant.
