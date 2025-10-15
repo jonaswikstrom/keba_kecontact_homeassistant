@@ -77,20 +77,22 @@ class KebaNotifyEntity(CoordinatorEntity, NotifyEntity):
         if not message:
             raise ServiceValidationError("Message cannot be empty")
 
-        if len(message) > MAX_DISPLAY_LENGTH:
+        text = message.replace(" ", "$")
+
+        if len(text) > MAX_DISPLAY_LENGTH:
             _LOGGER.warning(
                 "Message too long (%d chars), truncating to %d: %s",
-                len(message),
+                len(text),
                 MAX_DISPLAY_LENGTH,
-                message
+                text
             )
-            message = message[:MAX_DISPLAY_LENGTH]
+            text = text[:MAX_DISPLAY_LENGTH]
 
         data = kwargs.get(ATTR_DATA) or {}
         min_time = int(data.get("min_time", 2))
         max_time = int(data.get("max_time", 10))
 
-        command = f"display {min_time} {max_time} 0 0 {message}"
+        command = f"display {min_time} {max_time} 0 0 {text}"
 
         try:
             await self._client.send_command(command)
