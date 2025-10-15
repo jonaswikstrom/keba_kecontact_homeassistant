@@ -37,13 +37,13 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         strategy: str,
     ) -> None:
         """Initialize the charging coordinator."""
+        self._name = name
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_coordinator_{name}",
             update_interval=SCAN_INTERVAL,
         )
-        self._name = name
         self._charger_entry_ids = charger_entry_ids
         self._max_current = max_current
         self._strategy = strategy
@@ -259,11 +259,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Sent display message: %s", message)
         except Exception as err:
             _LOGGER.debug("Failed to send display message: %s", err)
-
-    @property
-    def name(self) -> str:
-        """Return the name of the coordinator."""
-        return self._name
 
     @property
     def charger_entry_ids(self) -> list[str]:
