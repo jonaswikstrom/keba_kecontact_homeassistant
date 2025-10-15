@@ -4,7 +4,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.notify import BaseNotificationService, NotifyEntity
+import voluptuous as vol
+
+from homeassistant.components.notify import (
+    ATTR_DATA,
+    BaseNotificationService,
+    NotifyEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -16,6 +22,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 MAX_DISPLAY_LENGTH = 23
+ATTR_DURATION = "duration"
 
 
 async def async_setup_entry(
@@ -43,6 +50,8 @@ async def async_setup_entry(
 class KebaNotifyEntity(CoordinatorEntity, NotifyEntity):
     """Notify entity for Keba charger display."""
 
+    _attr_supported_features = 0
+
     def __init__(
         self,
         coordinator,
@@ -59,7 +68,12 @@ class KebaNotifyEntity(CoordinatorEntity, NotifyEntity):
         self._client = client
 
     async def async_send_message(self, message: str = "", **kwargs: Any) -> None:
-        """Send a message to the charger display."""
+        """Send a message to the charger display.
+
+        Optional data parameters:
+        - min_time: Minimum time in seconds to show message (default: 2)
+        - max_time: Maximum time in seconds to show message (default: 10)
+        """
         if not message:
             raise ServiceValidationError("Message cannot be empty")
 
@@ -72,16 +86,20 @@ class KebaNotifyEntity(CoordinatorEntity, NotifyEntity):
             )
             message = message[:MAX_DISPLAY_LENGTH]
 
-        duration = kwargs.get("data", {}).get("duration", 0)
+        data = kwargs.get(ATTR_DATA) or {}
+        min_time = int(data.get("min_time", 2))
+        max_time = int(data.get("max_time", 10))
 
-        if duration > 0:
-            command = f"display {duration} {duration} 0 0 {message}"
-        else:
-            command = f"display 0 0 0 0 {message}"
+        command = f"display {min_time} {max_time} 0 0 {message}"
 
         try:
             await self._client.send_command(command)
-            _LOGGER.debug("Sent message to display: %s (duration: %ds)", message, duration)
+            _LOGGER.debug(
+                "Sent message to display: %s (min: %ds, max: %ds)",
+                message,
+                min_time,
+                max_time
+            )
         except Exception as err:
             _LOGGER.error("Failed to send message to display: %s", err)
             raise ServiceValidationError(
