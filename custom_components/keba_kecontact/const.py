@@ -5,6 +5,7 @@ DOMAIN = "keba_kecontact"
 CONF_IP_ADDRESS = "ip_address"
 CONF_RFID = "rfid"
 CONF_RFID_CLASS = "rfid_class"
+CONF_CHARGER_PRIORITY = "charger_priority"
 
 CONF_COORDINATOR_NAME = "coordinator_name"
 CONF_COORDINATOR_CHARGERS = "coordinator_chargers"
@@ -13,6 +14,10 @@ CONF_COORDINATOR_STRATEGY = "coordinator_strategy"
 
 COORDINATOR_STRATEGY_OFF = "off"
 COORDINATOR_STRATEGY_EQUAL = "equal"
+
+PRIORITY_LOW = "low"
+PRIORITY_NORMAL = "normal"
+PRIORITY_HIGH = "high"
 
 DEFAULT_SCAN_INTERVAL = 10
 
