@@ -96,7 +96,7 @@ class KebaUdpHandler:
         if not self._running or not self._transport:
             raise RuntimeError("UDP handler is not running")
 
-        data = message.encode('utf-8')
+        data = message.encode('cp437', 'ignore')
         self._transport.sendto(data, (ip_address, KEBA_UDP_PORT))
         _LOGGER.debug(f"Sent to {ip_address}: {message}")
 
