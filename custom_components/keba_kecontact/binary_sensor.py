@@ -129,7 +129,6 @@ BINARY_SENSOR_TYPES: tuple[KebaBinarySensorEntityDescription, ...] = (
         key="enable_sys",
         name="Enable System",
         device_class=BinarySensorDeviceClass.POWER,
-        entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=_is_enable_sys,
     ),
     KebaBinarySensorEntityDescription(
@@ -141,21 +140,18 @@ BINARY_SENSOR_TYPES: tuple[KebaBinarySensorEntityDescription, ...] = (
     KebaBinarySensorEntityDescription(
         key="authreq",
         name="Authentication Required",
-        entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=_is_authreq,
     ),
     KebaBinarySensorEntityDescription(
         key="authon",
         name="Authentication Enabled",
-        entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=_is_authon,
     ),
     KebaBinarySensorEntityDescription(
         key="x2_phase_switch",
         name="X2 Phase Switch",
-        entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=_is_x2_phase_switch,
     ),
