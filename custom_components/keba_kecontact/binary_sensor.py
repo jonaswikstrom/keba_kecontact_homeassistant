@@ -130,7 +130,6 @@ BINARY_SENSOR_TYPES: tuple[KebaBinarySensorEntityDescription, ...] = (
         name="Enable System",
         device_class=BinarySensorDeviceClass.POWER,
         entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
         value_fn=_is_enable_sys,
     ),
     KebaBinarySensorEntityDescription(

@@ -31,35 +31,29 @@ async def async_setup_entry(
         from .coordinator_number import async_setup_entry as async_setup_coordinator_numbers
         return await async_setup_coordinator_numbers(hass, entry, async_add_entities)
 
-    client: KebaClient = data["client"]
-    ip_address: str = data["ip_address"]
-
-    coordinator = None
-    for platform_data in hass.data[DOMAIN].values():
-        if isinstance(platform_data, dict) and "client" in platform_data:
-            if platform_data["client"] == client:
-                for entity_list in hass.data.get("entity_platform", {}).values():
-                    for entity in entity_list:
-                        if hasattr(entity, "coordinator") and isinstance(
-                            entity.coordinator, KebaDataUpdateCoordinator
-                        ):
-                            coordinator = entity.coordinator
-                            break
-
-    if coordinator is None:
-        from .sensor import KebaDataUpdateCoordinator
+    if "coordinator" in data:
+        coordinator = data["coordinator"]
+        device_info = data["device_info"]
+    else:
+        client: KebaClient = data["client"]
+        ip_address: str = data["ip_address"]
 
         coordinator = KebaDataUpdateCoordinator(hass, client)
         await coordinator.async_config_entry_first_refresh()
 
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, ip_address)},
-        name=f"Keba KeContact {ip_address}",
-        manufacturer="Keba",
-        model=coordinator.data.get("product", "KeContact"),
-        sw_version=coordinator.data.get("firmware"),
-        serial_number=coordinator.data.get("serial"),
-    )
+        device_info = DeviceInfo(
+            identifiers={(DOMAIN, ip_address)},
+            name=f"Keba KeContact {ip_address}",
+            manufacturer="Keba",
+            model=coordinator.data.get("product", "KeContact"),
+            sw_version=coordinator.data.get("firmware"),
+            serial_number=coordinator.data.get("serial"),
+        )
+
+        data["coordinator"] = coordinator
+        data["device_info"] = device_info
+
+    client: KebaClient = data["client"]
 
     entities = [
         KebaCurrentLimitNumber(coordinator, entry, device_info, client),

@@ -326,6 +326,7 @@ class KebaStateSensor(KebaBaseSensor):
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = ["starting", "not_ready", "ready", "charging", "error", "auth_rejected"]
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -367,6 +368,7 @@ class KebaPlugSensor(KebaBaseSensor):
         "plugged_station_ev",
         "plugged_station_ev_locked",
     ]
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -403,6 +405,7 @@ class KebaCurrent1Sensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
     _attr_suggested_display_precision = 1
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -429,6 +432,7 @@ class KebaCurrent2Sensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
     _attr_suggested_display_precision = 1
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -455,6 +459,7 @@ class KebaCurrent3Sensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
     _attr_suggested_display_precision = 1
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -481,6 +486,7 @@ class KebaVoltage1Sensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_suggested_display_precision = 0
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -506,6 +512,7 @@ class KebaVoltage2Sensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_suggested_display_precision = 0
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -531,6 +538,7 @@ class KebaVoltage3Sensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
     _attr_suggested_display_precision = 0
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
@@ -556,6 +564,7 @@ class KebaMaxCurrentSensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
     _attr_suggested_display_precision = 0
+    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
