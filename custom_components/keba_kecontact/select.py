@@ -100,7 +100,7 @@ class CoordinatorStrategySelect(SelectEntity):
 
 
 class ChargerPrioritySelect(SelectEntity):
-    """Select entity for setting charger priority."""
+    """Select entity for setting charger load balancing priority."""
 
     _attr_options = [
         PRIORITY_LOW,
@@ -118,9 +118,9 @@ class ChargerPrioritySelect(SelectEntity):
         self._hass = hass
         self._entry = entry
         self._attr_device_info = device_info
-        self._attr_unique_id = f"{entry.entry_id}_priority"
-        self._attr_name = "Priority"
-        self._attr_icon = "mdi:priority-high"
+        self._attr_unique_id = f"{entry.entry_id}_load_balancing_priority"
+        self._attr_name = "Load Balancing Priority"
+        self._attr_icon = "mdi:car-electric"
 
     @property
     def current_option(self) -> str | None:

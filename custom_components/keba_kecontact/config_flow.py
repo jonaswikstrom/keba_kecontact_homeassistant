@@ -182,7 +182,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     async def async_step_charger_options(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage RFID and priority options for individual charger."""
+        """Manage RFID options for individual charger."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
@@ -208,18 +208,6 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.TEXT,
-                    ),
-                ),
-                vol.Optional(
-                    CONF_CHARGER_PRIORITY,
-                    default=self.config_entry.options.get(
-                        CONF_CHARGER_PRIORITY,
-                        PRIORITY_NORMAL
-                    ),
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[PRIORITY_LOW, PRIORITY_NORMAL, PRIORITY_HIGH],
-                        translation_key="priority",
                     ),
                 ),
             }
