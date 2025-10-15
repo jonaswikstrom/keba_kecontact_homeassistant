@@ -92,16 +92,22 @@ class KebaNotifyEntity(CoordinatorEntity, NotifyEntity):
         min_time = int(data.get("min_time", 2))
         max_time = int(data.get("max_time", 10))
 
-        command = f"display {min_time} {max_time} 0 0 {text}"
+        # [a] parameter: 0 = use defaults, 1 = use custom min/max times
+        # Format: display [a] [min] [max] [tk] [text]
+        # When a=0, min and max are ignored and defaults (2s, 10s) are used
+        # When a=1, custom min and max times are used
+        use_custom_time = 1 if ("min_time" in data or "max_time" in data) else 0
+
+        command = f"display {use_custom_time} {min_time} {max_time} 0 {text}"
 
         try:
-            await self._client.send_command(command)
-            _LOGGER.debug(
-                "Sent message to display: %s (min: %ds, max: %ds)",
-                message,
-                min_time,
-                max_time
+            _LOGGER.info(
+                "Sending display command: '%s' (original message: '%s')",
+                command,
+                message
             )
+            await self._client.send_command(command)
+            _LOGGER.info("Display command sent successfully")
         except Exception as err:
             _LOGGER.error("Failed to send message to display: %s", err)
             raise ServiceValidationError(
