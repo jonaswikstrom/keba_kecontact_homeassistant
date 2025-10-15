@@ -74,6 +74,7 @@ class KebaStartChargingButton(ButtonEntity):
         self._client = client
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_start_charging"
+        self._attr_has_entity_name = True
         self._attr_name = "Start Charging"
         self._attr_icon = "mdi:play"
 
@@ -109,6 +110,7 @@ class KebaStopChargingButton(ButtonEntity):
         self._client = client
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_stop_charging"
+        self._attr_has_entity_name = True
         self._attr_name = "Stop Charging"
         self._attr_icon = "mdi:stop"
 
@@ -144,6 +146,7 @@ class KebaUnlockSocketButton(ButtonEntity):
         self._client = client
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_unlock_socket"
+        self._attr_has_entity_name = True
         self._attr_name = "Unlock Socket"
         self._attr_icon = "mdi:lock-open-variant"
 

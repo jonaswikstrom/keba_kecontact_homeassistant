@@ -52,6 +52,7 @@ class KebaRFIDTagSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_rfid_tag"
+        self._attr_has_entity_name = True
         self._attr_name = "RFID Tag"
 
     @property
@@ -72,6 +73,7 @@ class KebaRFIDClassSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_rfid_class"
+        self._attr_has_entity_name = True
         self._attr_name = "RFID Class"
 
     @property
@@ -95,6 +97,7 @@ class KebaPowerFactorSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_power_factor"
+        self._attr_has_entity_name = True
         self._attr_name = "Power Factor"
 
     @property
@@ -119,6 +122,7 @@ class KebaMaxCurrentPercentSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_max_current_percent"
+        self._attr_has_entity_name = True
         self._attr_name = "Maximum Current %"
 
     @property
@@ -144,6 +148,7 @@ class KebaCurrentHWSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_current_hw"
+        self._attr_has_entity_name = True
         self._attr_name = "Current Hardware"
 
     @property
@@ -169,6 +174,7 @@ class KebaCurrentTimerSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_current_timer"
+        self._attr_has_entity_name = True
         self._attr_name = "Planned Current"
 
     @property
@@ -194,6 +200,7 @@ class KebaTmoCTSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_tmo_ct"
+        self._attr_has_entity_name = True
         self._attr_name = "Time Until Planned Current"
 
     @property
@@ -214,6 +221,7 @@ class KebaOutputSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_output"
+        self._attr_has_entity_name = True
         self._attr_name = "Output"
 
     @property
@@ -234,6 +242,7 @@ class KebaInputSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_input"
+        self._attr_has_entity_name = True
         self._attr_name = "Input"
 
     @property
@@ -254,6 +263,7 @@ class KebaError1Sensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_error1"
+        self._attr_has_entity_name = True
         self._attr_name = "Error 1"
 
     @property
@@ -274,6 +284,7 @@ class KebaError2Sensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_error2"
+        self._attr_has_entity_name = True
         self._attr_name = "Error 2"
 
     @property
@@ -294,6 +305,7 @@ class KebaStateRawSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_state_raw"
+        self._attr_has_entity_name = True
         self._attr_name = "State (Raw)"
 
     @property
@@ -314,6 +326,7 @@ class KebaPlugRawSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_plug_raw"
+        self._attr_has_entity_name = True
         self._attr_name = "Plug (Raw)"
 
     @property
@@ -334,6 +347,7 @@ class KebaEnableSysRawSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_enable_sys_raw"
+        self._attr_has_entity_name = True
         self._attr_name = "Enable Sys (Raw)"
 
     @property
@@ -354,6 +368,7 @@ class KebaEnableUserRawSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_enable_user_raw"
+        self._attr_has_entity_name = True
         self._attr_name = "Enable User (Raw)"
 
     @property
@@ -374,6 +389,7 @@ class KebaSessionIDSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_session_id"
+        self._attr_has_entity_name = True
         self._attr_name = "Session ID"
 
     @property
@@ -398,6 +414,7 @@ class KebaEStartSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_e_start"
+        self._attr_has_entity_name = True
         self._attr_name = "Session Start Energy"
 
     @property
@@ -420,6 +437,7 @@ class KebaStartedSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_started"
+        self._attr_has_entity_name = True
         self._attr_name = "Session Start Time"
 
     @property
@@ -448,6 +466,7 @@ class KebaEndedSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_ended"
+        self._attr_has_entity_name = True
         self._attr_name = "Session End Time"
 
     @property
@@ -474,6 +493,7 @@ class KebaReasonSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_reason"
+        self._attr_has_entity_name = True
         self._attr_name = "Session End Reason"
 
     @property
@@ -497,6 +517,7 @@ class KebaUptimeSensor(KebaDiagnosticBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_uptime"
+        self._attr_has_entity_name = True
         self._attr_name = "Uptime"
 
     @property

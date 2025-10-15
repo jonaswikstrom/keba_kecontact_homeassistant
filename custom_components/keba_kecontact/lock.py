@@ -98,6 +98,7 @@ class KebaLock(CoordinatorEntity, LockEntity):
         self.entity_description = description
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
+        self._attr_has_entity_name = True
         self._client = client
         self._rfid_tag = rfid_tag or "00000000"
         self._rfid_class = rfid_class or "00000000000000000000"

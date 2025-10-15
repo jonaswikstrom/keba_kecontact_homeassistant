@@ -83,6 +83,7 @@ class KebaCurrentLimitNumber(NumberEntity):
         self._client = client
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_current_limit"
+        self._attr_has_entity_name = True
         self._attr_name = "Current Limit"
 
     @property

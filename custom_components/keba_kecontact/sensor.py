@@ -247,6 +247,7 @@ class KebaPowerSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_power"
+        self._attr_has_entity_name = True
         self._attr_name = "Power"
 
     @property
@@ -272,6 +273,7 @@ class KebaSessionEnergySensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_session_energy"
+        self._attr_has_entity_name = True
         self._attr_name = "Session Energy"
 
     @property
@@ -297,6 +299,7 @@ class KebaTotalEnergySensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_total_energy"
+        self._attr_has_entity_name = True
         self._attr_name = "Total Energy"
 
     @property
@@ -321,6 +324,7 @@ class KebaStateSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_state"
+        self._attr_has_entity_name = True
         self._attr_name = "State"
 
     @property
@@ -363,6 +367,7 @@ class KebaPlugSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_plug"
+        self._attr_has_entity_name = True
         self._attr_name = "Plug Status"
 
     @property
@@ -400,6 +405,7 @@ class KebaCurrent1Sensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_current_1"
+        self._attr_has_entity_name = True
         self._attr_name = "Current Phase 1"
 
     @property
@@ -427,6 +433,7 @@ class KebaCurrent2Sensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_current_2"
+        self._attr_has_entity_name = True
         self._attr_name = "Current Phase 2"
 
     @property
@@ -454,6 +461,7 @@ class KebaCurrent3Sensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_current_3"
+        self._attr_has_entity_name = True
         self._attr_name = "Current Phase 3"
 
     @property
@@ -481,6 +489,7 @@ class KebaVoltage1Sensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_voltage_1"
+        self._attr_has_entity_name = True
         self._attr_name = "Voltage Phase 1"
 
     @property
@@ -507,6 +516,7 @@ class KebaVoltage2Sensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_voltage_2"
+        self._attr_has_entity_name = True
         self._attr_name = "Voltage Phase 2"
 
     @property
@@ -533,6 +543,7 @@ class KebaVoltage3Sensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_voltage_3"
+        self._attr_has_entity_name = True
         self._attr_name = "Voltage Phase 3"
 
     @property
@@ -559,6 +570,7 @@ class KebaMaxCurrentSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_max_current"
+        self._attr_has_entity_name = True
         self._attr_name = "Max Current"
 
     @property
@@ -582,6 +594,7 @@ class KebaStateDetailsSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_state_details"
+        self._attr_has_entity_name = True
         self._attr_name = "Status"
 
     @property
@@ -606,6 +619,7 @@ class KebaSetCurrentSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_set_current"
+        self._attr_has_entity_name = True
         self._attr_name = "Set Current"
 
     @property
@@ -631,6 +645,7 @@ class KebaEnergyTargetSensor(KebaBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_energy_target"
+        self._attr_has_entity_name = True
         self._attr_name = "Energy Target"
 
     @property

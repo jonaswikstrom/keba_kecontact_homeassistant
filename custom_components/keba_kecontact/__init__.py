@@ -94,13 +94,16 @@ async def async_setup_charger_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
             f"Failed to fetch initial data from charger at {ip_address}: {err}"
         ) from err
 
+    serial = coordinator.data.get("serial")
+    device_name = entry.title if entry.title else f"Keba KeContact {serial}" if serial else f"Keba KeContact {ip_address}"
+
     device_info = DeviceInfo(
         identifiers={(DOMAIN, ip_address)},
-        name=f"Keba KeContact {ip_address}",
+        name=device_name,
         manufacturer="Keba",
         model=coordinator.data.get("product", "KeContact"),
         sw_version=coordinator.data.get("firmware"),
-        serial_number=coordinator.data.get("serial"),
+        serial_number=serial,
     )
 
     hass.data[DOMAIN][entry.entry_id] = {
