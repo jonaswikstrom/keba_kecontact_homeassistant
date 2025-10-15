@@ -22,10 +22,8 @@ from .const import (
     CONF_COORDINATOR_CHARGERS,
     CONF_COORDINATOR_MAX_CURRENT,
     CONF_COORDINATOR_STRATEGY,
-    CONF_COORDINATOR_PRIORITIES,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
-    COORDINATOR_STRATEGY_PRIORITY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -216,47 +214,11 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     async def async_step_coordinator_options(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage priority options for coordinator."""
+        """Manage options for coordinator."""
         if user_input is not None:
-            priorities = {}
-            for key, value in user_input.items():
-                if key.startswith("priority_"):
-                    entry_id = key.replace("priority_", "")
-                    priorities[entry_id] = value
-
-            return self.async_create_entry(title="", data={CONF_COORDINATOR_PRIORITIES: priorities})
-
-        charger_ids = self.config_entry.data[CONF_COORDINATOR_CHARGERS]
-        current_priorities = self.config_entry.options.get(CONF_COORDINATOR_PRIORITIES, {})
-
-        hass = self.hass
-        options_dict = {}
-
-        for idx, entry_id in enumerate(charger_ids):
-            if entry_id in hass.data.get(DOMAIN, {}):
-                charger_entry = hass.config_entries.async_get_entry(entry_id)
-                if charger_entry:
-                    charger_name = charger_entry.title
-                    default_priority = current_priorities.get(entry_id, idx + 1)
-
-                    options_dict[vol.Required(
-                        f"priority_{entry_id}",
-                        default=default_priority
-                    )] = selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=1,
-                            max=len(charger_ids),
-                            step=1,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    )
-
-        options_schema = vol.Schema(options_dict)
+            return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
             step_id="coordinator_options",
-            data_schema=options_schema,
-            description_placeholders={
-                "info": "Set priority for each charger (1 = highest priority)"
-            }
+            data_schema=vol.Schema({}),
         )

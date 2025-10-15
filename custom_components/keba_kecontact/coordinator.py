@@ -17,7 +17,6 @@ from .const import (
     DOMAIN,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
-    COORDINATOR_STRATEGY_PRIORITY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,7 +35,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         charger_entry_ids: list[str],
         max_current: int,
         strategy: str,
-        priorities: dict[str, int] | None = None,
     ) -> None:
         """Initialize the charging coordinator."""
         super().__init__(
@@ -49,14 +47,7 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._charger_entry_ids = charger_entry_ids
         self._max_current = max_current
         self._strategy = strategy
-        self._charger_priorities: dict[str, int] = {}
         self._state_listener = None
-
-        if priorities:
-            self._charger_priorities = priorities.copy()
-        else:
-            for idx, entry_id in enumerate(charger_entry_ids):
-                self._charger_priorities[entry_id] = idx + 1
 
     async def async_start(self) -> None:
         """Start the coordinator."""
@@ -155,13 +146,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             per_charger = self._max_current / len(active_chargers)
             return f"{len(active_chargers)} chargers @ {per_charger:.1f}A each"
 
-        elif self._strategy == COORDINATOR_STRATEGY_PRIORITY:
-            sorted_chargers = sorted(
-                active_chargers,
-                key=lambda x: self._charger_priorities.get(x, 999)
-            )
-            return f"Priority: {len(active_chargers)} chargers"
-
         return "Unknown strategy"
 
     def _is_load_balancing_active(self, active_chargers_count: int) -> bool:
@@ -204,8 +188,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             if self._strategy == COORDINATOR_STRATEGY_EQUAL:
                 await self._apply_equal_strategy(active_chargers)
-            elif self._strategy == COORDINATOR_STRATEGY_PRIORITY:
-                await self._apply_priority_strategy(active_chargers)
 
             await self.async_request_refresh()
 
@@ -256,63 +238,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     err
                 )
 
-    async def _apply_priority_strategy(self, active_chargers: dict[str, Any]) -> None:
-        """Apply priority-based distribution strategy."""
-        min_current_ma = 6000
-        max_current_ma = 63000
-
-        sorted_chargers = sorted(
-            active_chargers.items(),
-            key=lambda x: self._charger_priorities.get(x[0], 999)
-        )
-
-        num_chargers = len(sorted_chargers)
-        min_total_required = min_current_ma * num_chargers
-        available_current_ma = self._max_current * 1000
-
-        if available_current_ma < min_total_required:
-            _LOGGER.warning(
-                "Insufficient current: %d mA available, but %d chargers need minimum %d mA total (6A each). "
-                "Load balancing cannot proceed safely.",
-                available_current_ma,
-                num_chargers,
-                min_total_required
-            )
-            return
-
-        remaining_current_ma = available_current_ma
-        chargers_to_allocate = list(sorted_chargers)
-
-        for idx, (entry_id, data) in enumerate(chargers_to_allocate):
-            client = data["client"]
-            chargers_left = num_chargers - idx
-            min_for_others = min_current_ma * (chargers_left - 1)
-
-            available_for_this = remaining_current_ma - min_for_others
-            allocated_current = max(min_current_ma, min(available_for_this, max_current_ma))
-
-            priority = self._charger_priorities.get(entry_id, 999)
-
-            try:
-                await client.set_current(allocated_current)
-                remaining_current_ma -= allocated_current
-                _LOGGER.debug(
-                    "Set charger %s (priority %d) to %d mA",
-                    client.ip_address,
-                    priority,
-                    allocated_current
-                )
-
-                allocated_a = int(allocated_current / 1000)
-                message = f"LoadBal Prio{priority} {allocated_a}A"
-                await self._send_display_message(client, message)
-
-            except Exception as err:
-                _LOGGER.error(
-                    "Failed to set current for charger %s: %s",
-                    client.ip_address,
-                    err
-                )
 
     async def set_max_current(self, current: int) -> None:
         """Update maximum available current."""
@@ -323,12 +248,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Update load balancing strategy."""
         self._strategy = strategy
         await self._apply_load_balancing()
-
-    async def set_priority(self, entry_id: str, priority: int) -> None:
-        """Set priority for a specific charger."""
-        self._charger_priorities[entry_id] = priority
-        if self._strategy == COORDINATOR_STRATEGY_PRIORITY:
-            await self._apply_load_balancing()
 
     async def _send_display_message(self, client, message: str) -> None:
         """Send a message to charger display, truncating if necessary."""

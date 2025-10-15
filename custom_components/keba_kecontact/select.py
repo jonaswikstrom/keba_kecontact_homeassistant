@@ -15,7 +15,6 @@ from .const import (
     DOMAIN,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
-    COORDINATOR_STRATEGY_PRIORITY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +53,6 @@ class CoordinatorStrategySelect(SelectEntity):
     _attr_options = [
         COORDINATOR_STRATEGY_OFF,
         COORDINATOR_STRATEGY_EQUAL,
-        COORDINATOR_STRATEGY_PRIORITY,
     ]
 
     def __init__(

@@ -132,16 +132,8 @@ When you have multiple chargers, a Charging Coordinator is automatically created
 - **Strategy** (Select) - Load balancing strategy:
   - **Off** - No automatic balancing, manual control only
   - **Equal** - Distribute current equally between active chargers (minimum 6A per charger)
-  - **Priority** - Distribute based on priority, ensuring minimum 6A per charger (configurable in options)
 
 **Important:** Each charger requires a minimum of 6A to charge safely. If total available current is insufficient for all active chargers (e.g., 10A total with 2 chargers), load balancing will not activate and a warning is logged.
-
-#### Configuring Priority
-To set which charger gets priority when using Priority strategy:
-1. Go to **Settings** → **Devices & Services** → **Keba KeContact**
-2. Click **Configure** on the Charging Coordinator device
-3. Set priority numbers for each charger (1 = highest priority, 2 = second, etc.)
-4. Lower priority number = gets current first
 
 ## State Values
 
@@ -205,24 +197,6 @@ data:
 ```
 
 Now when both cars charge, each gets 16A automatically!
-
-### Priority Charging for Company vs Guest Car
-
-```yaml
-# Set coordinator to priority mode
-service: select.select_option
-target:
-  entity_id: select.keba_coordinator_strategy
-data:
-  option: "priority"
-
-# Company car (first charger) gets priority, guest car gets remainder
-```
-
-**Example Priority Distribution:**
-- Total available: 32A
-- Charger 1 (priority 1): Gets up to 26A (32A - 6A reserved for charger 2)
-- Charger 2 (priority 2): Gets remaining 6A (minimum)
 
 **Example with Insufficient Current:**
 - Total available: 10A

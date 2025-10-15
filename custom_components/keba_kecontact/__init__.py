@@ -18,7 +18,6 @@ from .const import (
     CONF_COORDINATOR_CHARGERS,
     CONF_COORDINATOR_MAX_CURRENT,
     CONF_COORDINATOR_STRATEGY,
-    CONF_COORDINATOR_PRIORITIES,
     DOMAIN,
 )
 
@@ -132,15 +131,12 @@ async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry)
     max_current = entry.data[CONF_COORDINATOR_MAX_CURRENT]
     strategy = entry.data[CONF_COORDINATOR_STRATEGY]
 
-    priorities = entry.options.get(CONF_COORDINATOR_PRIORITIES, {})
-
     coordinator = KebaChargingCoordinator(
         hass,
         name,
         charger_entry_ids,
         max_current,
         strategy,
-        priorities,
     )
 
     await coordinator.async_start()

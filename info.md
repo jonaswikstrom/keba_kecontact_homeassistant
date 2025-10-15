@@ -43,7 +43,7 @@ Control and monitor your Keba KeContact EV charger directly from Home Assistant.
 - Total power/energy sensors
 - Active chargers count
 - Max current control (total available)
-- Strategy selector (Off/Equal/Priority)
+- Strategy selector (Off/Equal)
 
 ## Example: Load Balancing Two Chargers
 
