@@ -70,24 +70,8 @@ async def async_setup_entry(
         from .coordinator_sensor import async_setup_entry as async_setup_coordinator_sensors
         return await async_setup_coordinator_sensors(hass, entry, async_add_entities)
 
-    client: KebaClient = data["client"]
-    ip_address: str = data["ip_address"]
-
-    coordinator = KebaDataUpdateCoordinator(hass, client)
-    await coordinator.async_config_entry_first_refresh()
-
-    data["coordinator"] = coordinator
-
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, ip_address)},
-        name=f"Keba KeContact {ip_address}",
-        manufacturer="Keba",
-        model=coordinator.data.get("product", "KeContact"),
-        sw_version=coordinator.data.get("firmware"),
-        serial_number=coordinator.data.get("serial"),
-    )
-
-    data["device_info"] = device_info
+    coordinator = data["coordinator"]
+    device_info = data["device_info"]
 
     entities = [
         KebaStateDetailsSensor(coordinator, entry, device_info),

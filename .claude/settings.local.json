@@ -6,7 +6,18 @@
       "Bash(where python3)",
       "Bash(where py)",
       "Bash(py -m py_compile:*)",
-      "Bash(py:*)"
+      "Bash(py:*)",
+      "Bash(git log:*)",
+      "Bash(git for-each-ref:*)",
+      "Bash(while read ref)",
+      "Bash(do git update-ref -d \"$ref\")",
+      "Bash(done)",
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(git fetch:*)",
+      "Bash(git show-ref:*)",
+      "Bash(find:*)",
+      "Bash(git branch:*)"
     ],
     "deny": [],
     "ask": []

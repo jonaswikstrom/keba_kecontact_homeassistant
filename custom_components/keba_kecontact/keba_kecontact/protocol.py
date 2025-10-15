@@ -111,7 +111,11 @@ class Report1:
     def auth_required(self) -> bool:
         """Check if authentication is required (DIP-Sw2 bit 4)."""
         if self.dip_switch_2 is not None:
-            return bool(self.dip_switch_2 & 0x10)
+            try:
+                dip_value = int(self.dip_switch_2) if isinstance(self.dip_switch_2, str) else self.dip_switch_2
+                return bool(dip_value & 0x10)
+            except (ValueError, TypeError):
+                return False
         return False
 
     def __repr__(self):

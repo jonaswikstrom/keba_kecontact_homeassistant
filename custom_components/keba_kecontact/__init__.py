@@ -50,6 +50,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_setup_charger_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a Keba charger from a config entry."""
+    from .sensor import KebaDataUpdateCoordinator
+    from homeassistant.helpers.entity import DeviceInfo
+
     ip_address = entry.data[CONF_IP_ADDRESS]
 
     manager = KebaUdpManager.get_instance()
@@ -80,10 +83,32 @@ async def async_setup_charger_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
             f"Failed to connect to charger at {ip_address}: {err}"
         ) from err
 
+    coordinator = KebaDataUpdateCoordinator(hass, client)
+
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.error("Failed to fetch initial data from charger at %s: %s", ip_address, err)
+        await client.disconnect()
+        raise ConfigEntryNotReady(
+            f"Failed to fetch initial data from charger at {ip_address}: {err}"
+        ) from err
+
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, ip_address)},
+        name=f"Keba KeContact {ip_address}",
+        manufacturer="Keba",
+        model=coordinator.data.get("product", "KeContact"),
+        sw_version=coordinator.data.get("firmware"),
+        serial_number=coordinator.data.get("serial"),
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
         "client": client,
         "manager": manager,
         "ip_address": ip_address,
+        "coordinator": coordinator,
+        "device_info": device_info,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
