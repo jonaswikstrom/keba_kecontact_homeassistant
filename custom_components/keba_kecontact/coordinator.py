@@ -197,7 +197,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _apply_equal_strategy(self, active_chargers: dict[str, Any]) -> None:
         """Apply equal distribution strategy."""
         min_current_ma = 6000
-        max_current_ma = 63000
         available_current_ma = self._max_current * 1000
         num_chargers = len(active_chargers)
 
@@ -214,21 +213,55 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return
 
         per_charger_ma = int(available_current_ma / num_chargers)
-        per_charger_ma = max(min_current_ma, min(per_charger_ma, max_current_ma))
+        per_charger_ma = max(min_current_ma, per_charger_ma)
 
         per_charger_a = per_charger_ma / 1000
 
         for entry_id, data in active_chargers.items():
             client = data["client"]
+
+            entry_data = self.hass.data[DOMAIN].get(entry_id, {})
+            coordinator = entry_data.get("coordinator")
+
+            charger_hw_limit_ma = 63000
+            charger_user_limit_ma = 63000
+
+            if coordinator and coordinator.data:
+                curr_hw = coordinator.data.get("curr_hw")
+                if curr_hw is not None:
+                    charger_hw_limit_ma = curr_hw
+
+                max_curr = coordinator.data.get("max_curr")
+                if max_curr is not None:
+                    charger_user_limit_ma = max_curr
+
+            actual_current_ma = min(per_charger_ma, charger_hw_limit_ma, charger_user_limit_ma)
+
+            limit_reason = "LoadBal"
+            if actual_current_ma == charger_hw_limit_ma and actual_current_ma < per_charger_ma:
+                limit_reason = "HW Limit"
+            elif actual_current_ma == charger_user_limit_ma and actual_current_ma < min(per_charger_ma, charger_hw_limit_ma):
+                limit_reason = "User Limit"
+
+            _LOGGER.debug(
+                "Charger %s: requested=%d mA, hw_limit=%d mA, user_limit=%d mA, actual=%d mA (%s)",
+                client.ip_address,
+                per_charger_ma,
+                charger_hw_limit_ma,
+                charger_user_limit_ma,
+                actual_current_ma,
+                limit_reason
+            )
+
             try:
-                await client.set_current(per_charger_ma)
+                await client.set_current(actual_current_ma)
                 _LOGGER.debug(
                     "Set charger %s to %d mA (equal distribution)",
                     client.ip_address,
-                    per_charger_ma
+                    actual_current_ma
                 )
 
-                message = f"LoadBal Equal {int(per_charger_a)}A"
+                message = f"{limit_reason} {int(actual_current_ma / 1000)}A"
                 await self._send_display_message(client, message)
 
             except Exception as err:

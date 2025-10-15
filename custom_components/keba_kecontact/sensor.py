@@ -34,8 +34,6 @@ from .sensor_diagnostic import (
     KebaRFIDClassSensor,
     KebaPowerFactorSensor,
     KebaMaxCurrentPercentSensor,
-    KebaCurrentHWSensor,
-    KebaCurrentTimerSensor,
     KebaTmoCTSensor,
     KebaOutputSensor,
     KebaInputSensor,
@@ -89,12 +87,12 @@ async def async_setup_entry(
         KebaVoltage2Sensor(coordinator, entry, device_info),
         KebaVoltage3Sensor(coordinator, entry, device_info),
         KebaMaxCurrentSensor(coordinator, entry, device_info),
+        KebaCurrentHardwareSensor(coordinator, entry, device_info),
+        KebaPlannedCurrentSensor(coordinator, entry, device_info),
         KebaRFIDTagSensor(coordinator, entry, device_info),
         KebaRFIDClassSensor(coordinator, entry, device_info),
         KebaPowerFactorSensor(coordinator, entry, device_info),
         KebaMaxCurrentPercentSensor(coordinator, entry, device_info),
-        KebaCurrentHWSensor(coordinator, entry, device_info),
-        KebaCurrentTimerSensor(coordinator, entry, device_info),
         KebaTmoCTSensor(coordinator, entry, device_info),
         KebaOutputSensor(coordinator, entry, device_info),
         KebaInputSensor(coordinator, entry, device_info),
@@ -653,3 +651,56 @@ class KebaEnergyTargetSensor(KebaBaseSensor):
         """Return the state of the sensor."""
         setenergy = self.coordinator.data.get("setenergy")
         return setenergy / 10000.0 if setenergy is not None else None
+
+
+class KebaCurrentHardwareSensor(KebaBaseSensor):
+    """Sensor for current hardware limit."""
+
+    _attr_device_class = SensorDeviceClass.CURRENT
+    _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
+    _attr_suggested_display_precision = 0
+
+    def __init__(
+        self,
+        coordinator: KebaDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info)
+        self._attr_unique_id = f"{entry.entry_id}_current_hardware"
+        self._attr_has_entity_name = True
+        self._attr_name = "Current Hardware"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        curr_hw = self.coordinator.data.get("curr_hw")
+        return curr_hw / 1000.0 if curr_hw is not None else None
+
+
+class KebaPlannedCurrentSensor(KebaBaseSensor):
+    """Sensor for planned current."""
+
+    _attr_device_class = SensorDeviceClass.CURRENT
+    _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
+    _attr_suggested_display_precision = 0
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self,
+        coordinator: KebaDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info)
+        self._attr_unique_id = f"{entry.entry_id}_planned_current"
+        self._attr_has_entity_name = True
+        self._attr_name = "Planned Current"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        curr_timer = self.coordinator.data.get("curr_timer")
+        return curr_timer / 1000.0 if curr_timer is not None else None
