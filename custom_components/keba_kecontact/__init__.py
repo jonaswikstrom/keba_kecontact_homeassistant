@@ -116,6 +116,23 @@ async def async_setup_charger_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    saved_current_limit = entry.options.get("current_limit")
+    if saved_current_limit is not None:
+        try:
+            milliamps = int(saved_current_limit * 1000)
+            await client.set_current(milliamps)
+            _LOGGER.info(
+                "Applied saved Current Limit %.1f A to charger at %s",
+                saved_current_limit,
+                ip_address
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to apply saved Current Limit to charger at %s: %s",
+                ip_address,
+                err
+            )
+
     await _check_and_create_coordinator(hass)
 
     return True
@@ -156,8 +173,14 @@ async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry)
     """Set up a Keba Charging Coordinator from a config entry."""
     name = entry.data[CONF_COORDINATOR_NAME]
     charger_entry_ids = entry.data[CONF_COORDINATOR_CHARGERS]
-    max_current = entry.data[CONF_COORDINATOR_MAX_CURRENT]
-    strategy = entry.data[CONF_COORDINATOR_STRATEGY]
+    max_current = entry.options.get(
+        CONF_COORDINATOR_MAX_CURRENT,
+        entry.data[CONF_COORDINATOR_MAX_CURRENT]
+    )
+    strategy = entry.options.get(
+        CONF_COORDINATOR_STRATEGY,
+        entry.data[CONF_COORDINATOR_STRATEGY]
+    )
 
     coordinator = KebaChargingCoordinator(
         hass,

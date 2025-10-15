@@ -61,6 +61,7 @@ class CoordinatorMaxCurrentNumber(NumberEntity):
     ) -> None:
         """Initialize the number entity."""
         self._coordinator = coordinator
+        self._entry = entry
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_max_current"
         self._attr_name = "Max Current"
@@ -75,7 +76,14 @@ class CoordinatorMaxCurrentNumber(NumberEntity):
         _LOGGER.debug("Setting coordinator max current to %.1f A", value)
         try:
             await self._coordinator.set_max_current(int(value))
-            _LOGGER.info("Set coordinator max current to %.1f A", value)
+
+            from .const import CONF_COORDINATOR_MAX_CURRENT
+            new_options = {**self._entry.options, CONF_COORDINATOR_MAX_CURRENT: int(value)}
+            self.hass.config_entries.async_update_entry(
+                self._entry, options=new_options
+            )
+
+            _LOGGER.info("Set coordinator max current to %.1f A and persisted to config", value)
         except Exception as err:
             _LOGGER.error("Failed to set coordinator max current to %.1f A: %s", value, err)
             raise

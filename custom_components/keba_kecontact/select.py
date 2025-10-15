@@ -73,6 +73,7 @@ class CoordinatorStrategySelect(SelectEntity):
     ) -> None:
         """Initialize the select entity."""
         self._coordinator = coordinator
+        self._entry = entry
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_strategy"
         self._attr_name = "Strategy"
@@ -88,7 +89,14 @@ class CoordinatorStrategySelect(SelectEntity):
         _LOGGER.debug("Setting coordinator strategy to %s", option)
         try:
             await self._coordinator.set_strategy(option)
-            _LOGGER.info("Set coordinator strategy to %s", option)
+
+            from .const import CONF_COORDINATOR_STRATEGY
+            new_options = {**self._entry.options, CONF_COORDINATOR_STRATEGY: option}
+            self.hass.config_entries.async_update_entry(
+                self._entry, options=new_options
+            )
+
+            _LOGGER.info("Set coordinator strategy to %s and persisted to config", option)
         except Exception as err:
             _LOGGER.error("Failed to set coordinator strategy to %s: %s", option, err)
             raise

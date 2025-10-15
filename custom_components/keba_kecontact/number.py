@@ -80,6 +80,7 @@ class KebaCurrentLimitNumber(NumberEntity):
     ) -> None:
         """Initialize the number entity."""
         self._coordinator = coordinator
+        self._entry = entry
         self._client = client
         self._attr_device_info = device_info
         self._attr_unique_id = f"{entry.entry_id}_current_limit"
@@ -88,20 +89,22 @@ class KebaCurrentLimitNumber(NumberEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the current value."""
-        max_curr = self._coordinator.data.get("max_curr")
-        if max_curr is None:
-            return None
-        return max_curr / 1000.0
+        """Return the current value from config (user's choice), not from charger."""
+        return self._entry.options.get("current_limit")
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set new value."""
+        """Set new value and persist to config."""
         _LOGGER.debug("Setting current limit on %s to %.1f A", self._client.ip_address, value)
         try:
             milliamps = int(value * 1000)
             await self._client.set_current(milliamps)
-            _LOGGER.info("Set current limit on %s to %.1f A (%d mA)", self._client.ip_address, value, milliamps)
-            await self._coordinator.async_request_refresh()
+
+            new_options = {**self._entry.options, "current_limit": value}
+            self.hass.config_entries.async_update_entry(
+                self._entry, options=new_options
+            )
+
+            _LOGGER.info("Set current limit on %s to %.1f A (%d mA) and persisted to config", self._client.ip_address, value, milliamps)
         except Exception as err:
             _LOGGER.error("Failed to set current limit on %s to %.1f A: %s", self._client.ip_address, value, err)
             raise
