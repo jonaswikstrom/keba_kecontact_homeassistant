@@ -72,9 +72,16 @@ class KebaNotifyEntity(CoordinatorEntity, NotifyEntity):
             )
             message = message[:MAX_DISPLAY_LENGTH]
 
+        duration = kwargs.get("data", {}).get("duration", 0)
+
+        if duration > 0:
+            command = f"display {duration} {duration} 0 0 {message}"
+        else:
+            command = f"display 0 0 0 0 {message}"
+
         try:
-            await self._client.display_text(message)
-            _LOGGER.debug("Sent message to display: %s", message)
+            await self._client.send_command(command)
+            _LOGGER.debug("Sent message to display: %s (duration: %ds)", message, duration)
         except Exception as err:
             _LOGGER.error("Failed to send message to display: %s", err)
             raise ServiceValidationError(

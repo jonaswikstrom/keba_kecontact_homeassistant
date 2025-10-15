@@ -26,28 +26,11 @@ async def async_setup_entry(
     """Set up Keba KeContact button based on a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
 
-    if "coordinator" in data:
-        coordinator = data["coordinator"]
-        device_info = data["device_info"]
-    else:
-        client: KebaClient = data["client"]
-        ip_address: str = data["ip_address"]
+    if data.get("type") == "charging_coordinator":
+        return
 
-        coordinator = KebaDataUpdateCoordinator(hass, client)
-        await coordinator.async_config_entry_first_refresh()
-
-        device_info = DeviceInfo(
-            identifiers={(DOMAIN, ip_address)},
-            name=f"Keba KeContact {ip_address}",
-            manufacturer="Keba",
-            model=coordinator.data.get("product", "KeContact"),
-            sw_version=coordinator.data.get("firmware"),
-            serial_number=coordinator.data.get("serial"),
-        )
-
-        data["coordinator"] = coordinator
-        data["device_info"] = device_info
-
+    coordinator = data["coordinator"]
+    device_info = data["device_info"]
     client: KebaClient = data["client"]
 
     entities = [
