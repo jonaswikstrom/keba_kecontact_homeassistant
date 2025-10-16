@@ -145,12 +145,17 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if state.get("state") == 3
         ]
 
-        if not active_chargers:
-            return "No active chargers"
+        num_active = len(active_chargers)
+
+        if num_active == 0:
+            return f"{self._max_current}A available"
 
         if self._strategy == COORDINATOR_STRATEGY_EQUAL:
-            per_charger = self._max_current / len(active_chargers)
-            return f"{len(active_chargers)} chargers @ {per_charger:.1f}A each"
+            per_charger = int(self._max_current / num_active)
+            if num_active == 1:
+                return f"{self._max_current}A available, {per_charger}A to charger"
+            else:
+                return f"{self._max_current}A available, {per_charger}A per charger"
 
         return "Unknown strategy"
 
