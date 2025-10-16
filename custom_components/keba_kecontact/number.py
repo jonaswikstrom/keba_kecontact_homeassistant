@@ -10,6 +10,7 @@ from homeassistant.const import UnitOfElectricCurrent
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .keba_kecontact.client import KebaClient
 
@@ -62,7 +63,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class KebaCurrentLimitNumber(NumberEntity):
+class KebaCurrentLimitNumber(CoordinatorEntity[KebaDataUpdateCoordinator], NumberEntity):
     """Number entity for setting current limit."""
 
     _attr_mode = NumberMode.SLIDER
@@ -79,7 +80,7 @@ class KebaCurrentLimitNumber(NumberEntity):
         client: KebaClient,
     ) -> None:
         """Initialize the number entity."""
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._entry = entry
         self._client = client
         self._attr_device_info = device_info
@@ -89,7 +90,11 @@ class KebaCurrentLimitNumber(NumberEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the current value from config (user's choice), not from charger."""
+        """Return the current value from charger (actual applied current)."""
+        if self._coordinator.data:
+            max_curr_ma = self._coordinator.data.get("max_curr")
+            if max_curr_ma is not None:
+                return max_curr_ma / 1000
         return self._entry.options.get("current_limit")
 
     async def async_set_native_value(self, value: float) -> None:
@@ -108,8 +113,3 @@ class KebaCurrentLimitNumber(NumberEntity):
         except Exception as err:
             _LOGGER.error("Failed to set current limit on %s to %.1f A: %s", self._client.ip_address, value, err)
             raise
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return self._coordinator.last_update_success

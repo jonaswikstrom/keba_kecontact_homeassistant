@@ -112,6 +112,7 @@ async def async_setup_charger_entry(hass: HomeAssistant, entry: ConfigEntry) -> 
         "ip_address": ip_address,
         "coordinator": coordinator,
         "device_info": device_info,
+        "config_entry": entry,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

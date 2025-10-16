@@ -200,16 +200,64 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if data.get("state") == 3
             }
 
-            if not active_chargers:
-                return
+            num_active = len(active_chargers)
 
-            if self._strategy == COORDINATOR_STRATEGY_EQUAL:
+            if num_active == 0:
+                await self._restore_all_chargers_to_user_limits(charger_states)
+            elif num_active == 1:
+                await self._restore_all_chargers_to_user_limits(charger_states)
+            elif self._strategy == COORDINATOR_STRATEGY_EQUAL:
                 await self._apply_equal_strategy(active_chargers)
 
             await self.async_request_refresh()
 
         except Exception as err:
             _LOGGER.error("Failed to apply load balancing: %s", err, exc_info=True)
+
+    async def _restore_all_chargers_to_user_limits(self, charger_states: dict[str, Any]) -> None:
+        """Restore all chargers to their user-configured current limits."""
+        for entry_id, data in charger_states.items():
+            client = data["client"]
+            entry_data = self.hass.data[DOMAIN].get(entry_id, {})
+            config_entry = entry_data.get("config_entry")
+
+            if not config_entry:
+                _LOGGER.debug("No config entry found for %s, skipping restore", entry_id)
+                continue
+
+            user_limit = config_entry.options.get("current_limit")
+            if user_limit is None:
+                _LOGGER.debug("No user current_limit found for %s, skipping restore", entry_id)
+                continue
+
+            user_limit_ma = int(user_limit * 1000)
+
+            coordinator = entry_data.get("coordinator")
+            charger_hw_limit_ma = 63000
+            if coordinator and coordinator.data:
+                curr_hw = coordinator.data.get("curr_hw")
+                if curr_hw is not None:
+                    charger_hw_limit_ma = curr_hw
+
+            actual_current_ma = min(user_limit_ma, charger_hw_limit_ma)
+
+            try:
+                await client.set_current(actual_current_ma)
+                _LOGGER.debug(
+                    "Restored charger %s to user limit %d mA",
+                    client.ip_address,
+                    actual_current_ma
+                )
+
+                message = f"User {int(actual_current_ma / 1000)}A"
+                await self._send_display_message(client, message)
+
+            except Exception as err:
+                _LOGGER.error(
+                    "Failed to restore charger %s to user limit: %s",
+                    client.ip_address,
+                    err
+                )
 
     async def _apply_equal_strategy(self, active_chargers: dict[str, Any]) -> None:
         """Apply equal distribution strategy."""
@@ -241,31 +289,23 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             coordinator = entry_data.get("coordinator")
 
             charger_hw_limit_ma = 63000
-            charger_user_limit_ma = 63000
 
             if coordinator and coordinator.data:
                 curr_hw = coordinator.data.get("curr_hw")
                 if curr_hw is not None:
                     charger_hw_limit_ma = curr_hw
 
-                max_curr = coordinator.data.get("max_curr")
-                if max_curr is not None:
-                    charger_user_limit_ma = max_curr
-
-            actual_current_ma = min(per_charger_ma, charger_hw_limit_ma, charger_user_limit_ma)
+            actual_current_ma = min(per_charger_ma, charger_hw_limit_ma)
 
             limit_reason = "LoadBal"
             if actual_current_ma == charger_hw_limit_ma and actual_current_ma < per_charger_ma:
                 limit_reason = "HW Limit"
-            elif actual_current_ma == charger_user_limit_ma and actual_current_ma < min(per_charger_ma, charger_hw_limit_ma):
-                limit_reason = "User Limit"
 
             _LOGGER.debug(
-                "Charger %s: requested=%d mA, hw_limit=%d mA, user_limit=%d mA, actual=%d mA (%s)",
+                "Charger %s: requested=%d mA, hw_limit=%d mA, actual=%d mA (%s)",
                 client.ip_address,
                 per_charger_ma,
                 charger_hw_limit_ma,
-                charger_user_limit_ma,
                 actual_current_ma,
                 limit_reason
             )
