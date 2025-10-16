@@ -48,6 +48,7 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._max_current = max_current
         self._strategy = strategy
         self._state_listener = None
+        self._previous_active_count = 0
 
     async def async_start(self) -> None:
         """Start the coordinator."""
@@ -118,6 +119,15 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             distribution = self._calculate_distribution(charger_states)
             is_balancing = self._is_load_balancing_active(active_chargers)
+
+            if active_chargers != self._previous_active_count:
+                _LOGGER.info(
+                    "Active chargers changed from %d to %d, applying load balancing",
+                    self._previous_active_count,
+                    active_chargers
+                )
+                self._previous_active_count = active_chargers
+                self.hass.async_create_task(self._apply_load_balancing())
 
             return {
                 "total_power": total_power,
