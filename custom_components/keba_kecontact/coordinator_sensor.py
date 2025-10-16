@@ -37,13 +37,7 @@ async def async_setup_entry(
         return
 
     coordinator: KebaChargingCoordinator = data["coordinator"]
-
-    device_info = DeviceInfo(
-        identifiers={(DOMAIN, f"coordinator_{coordinator.name}")},
-        name=f"Keba Charging Coordinator - {coordinator.name}",
-        manufacturer="Keba",
-        model="Charging Coordinator",
-    )
+    device_info = data["device_info"]
 
     entities = [
         CoordinatorTotalPowerSensor(coordinator, entry, device_info),

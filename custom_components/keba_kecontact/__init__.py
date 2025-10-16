@@ -171,6 +171,8 @@ async def _check_and_create_coordinator(hass: HomeAssistant) -> None:
 
 async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a Keba Charging Coordinator from a config entry."""
+    from homeassistant.helpers.entity import DeviceInfo
+
     name = entry.data[CONF_COORDINATOR_NAME]
     charger_entry_ids = entry.data[CONF_COORDINATOR_CHARGERS]
     max_current = entry.options.get(
@@ -192,10 +194,20 @@ async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry)
 
     await coordinator.async_start()
 
+    device_name = entry.title if entry.title else name
+
+    device_info = DeviceInfo(
+        identifiers={(DOMAIN, f"coordinator_{name}")},
+        name=device_name,
+        manufacturer="Keba",
+        model="Charging Coordinator",
+    )
+
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "type": "charging_coordinator",
         "config_entry": entry,
+        "device_info": device_info,
     }
 
     entry.async_on_unload(entry.add_update_listener(async_reload_coordinator_entry))
