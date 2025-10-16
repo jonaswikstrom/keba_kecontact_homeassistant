@@ -88,6 +88,7 @@ class CoordinatorTotalPowerSensor(CoordinatorBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_total_power"
+        self._attr_has_entity_name = True
         self._attr_name = "Total Power"
 
     @property
@@ -113,6 +114,7 @@ class CoordinatorTotalSessionEnergySensor(CoordinatorBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_total_session_energy"
+        self._attr_has_entity_name = True
         self._attr_name = "Total Session Energy"
 
     @property
@@ -138,6 +140,7 @@ class CoordinatorTotalEnergySensor(CoordinatorBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_total_energy"
+        self._attr_has_entity_name = True
         self._attr_name = "Total Energy"
 
     @property
@@ -160,6 +163,7 @@ class CoordinatorActiveChargersSensor(CoordinatorBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_active_chargers"
+        self._attr_has_entity_name = True
         self._attr_name = "Active Chargers"
 
     @property
@@ -182,6 +186,7 @@ class CoordinatorDistributionSensor(CoordinatorBaseSensor):
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info)
         self._attr_unique_id = f"{entry.entry_id}_distribution"
+        self._attr_has_entity_name = True
         self._attr_name = "Current Distribution"
 
     @property

@@ -82,13 +82,19 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             for entry_id in self._charger_entry_ids:
                 if entry_id not in self.hass.data.get(DOMAIN, {}):
+                    _LOGGER.debug("Charger entry %s not found in hass.data, skipping", entry_id)
                     continue
 
                 entry_data = self.hass.data[DOMAIN][entry_id]
                 if "coordinator" not in entry_data:
+                    _LOGGER.debug("Charger entry %s has no coordinator, skipping", entry_id)
                     continue
 
                 coordinator = entry_data["coordinator"]
+                if not coordinator.data:
+                    _LOGGER.debug("Charger entry %s has no data yet, skipping", entry_id)
+                    continue
+
                 charger_data = coordinator.data
 
                 charger_states[entry_id] = {
@@ -164,13 +170,19 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             charger_states = {}
             for entry_id in self._charger_entry_ids:
                 if entry_id not in self.hass.data.get(DOMAIN, {}):
+                    _LOGGER.debug("Charger entry %s not found during load balancing, skipping", entry_id)
                     continue
 
                 entry_data = self.hass.data[DOMAIN][entry_id]
                 if "coordinator" not in entry_data or "client" not in entry_data:
+                    _LOGGER.debug("Charger entry %s missing coordinator or client, skipping", entry_id)
                     continue
 
                 coordinator = entry_data["coordinator"]
+                if not coordinator.data:
+                    _LOGGER.debug("Charger entry %s has no data during load balancing, skipping", entry_id)
+                    continue
+
                 charger_data = coordinator.data
                 charger_states[entry_id] = {
                     "state": charger_data.get("state"),
