@@ -91,8 +91,8 @@ class KebaCurrentLimitNumber(CoordinatorEntity[KebaDataUpdateCoordinator], Numbe
     @property
     def native_value(self) -> float | None:
         """Return the current value from charger (actual applied current)."""
-        if self._coordinator.data:
-            max_curr_ma = self._coordinator.data.get("max_curr")
+        if self.coordinator.data:
+            max_curr_ma = self.coordinator.data.get("max_curr")
             if max_curr_ma is not None:
                 return max_curr_ma / 1000
         return self._entry.options.get("current_limit")

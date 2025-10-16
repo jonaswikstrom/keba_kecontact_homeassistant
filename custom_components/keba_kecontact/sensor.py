@@ -557,7 +557,6 @@ class KebaMaxCurrentSensor(KebaBaseSensor):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
     _attr_suggested_display_precision = 0
-    _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
