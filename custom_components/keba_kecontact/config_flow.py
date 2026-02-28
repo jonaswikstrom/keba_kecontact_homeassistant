@@ -219,7 +219,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_VEHICLE_SOC_ENTITY,
-                    default=self.config_entry.options.get(CONF_VEHICLE_SOC_ENTITY, ""),
+                    description={"suggested_value": self.config_entry.options.get(CONF_VEHICLE_SOC_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),
@@ -265,7 +265,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_NORDPOOL_ENTITY,
-                    default=self.config_entry.options.get(CONF_NORDPOOL_ENTITY, ""),
+                    description={"suggested_value": self.config_entry.options.get(CONF_NORDPOOL_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),
