@@ -25,9 +25,16 @@ from .const import (
     CONF_COORDINATOR_STRATEGY,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
+    COORDINATOR_STRATEGY_SMART,
     PRIORITY_LOW,
     PRIORITY_NORMAL,
     PRIORITY_HIGH,
+    CONF_ANTHROPIC_API_KEY,
+    CONF_NORDPOOL_ENTITY,
+    CONF_VEHICLE_SOC_ENTITY,
+    CONF_BATTERY_CAPACITY,
+    CONF_DEPARTURE_TIME,
+    DEFAULT_BATTERY_CAPACITY_KWH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -182,7 +189,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     async def async_step_charger_options(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage RFID options for individual charger."""
+        """Manage options for individual charger."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
@@ -210,6 +217,30 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                         type=selector.TextSelectorType.TEXT,
                     ),
                 ),
+                vol.Optional(
+                    CONF_VEHICLE_SOC_ENTITY,
+                    default=self.config_entry.options.get(CONF_VEHICLE_SOC_ENTITY, ""),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor"),
+                ),
+                vol.Optional(
+                    CONF_BATTERY_CAPACITY,
+                    default=self.config_entry.options.get(
+                        CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY_KWH
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=10,
+                        max=200,
+                        step=1,
+                        unit_of_measurement="kWh",
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
+                ),
+                vol.Optional(
+                    CONF_DEPARTURE_TIME,
+                    default=self.config_entry.options.get(CONF_DEPARTURE_TIME, "07:00:00"),
+                ): selector.TimeSelector(),
             }
         )
 
@@ -218,11 +249,30 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     async def async_step_coordinator_options(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage options for coordinator."""
+        """Manage options for coordinator including AI smart charging."""
         if user_input is not None:
-            return self.async_create_entry(title="", data={})
+            return self.async_create_entry(title="", data=user_input)
+
+        options_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_ANTHROPIC_API_KEY,
+                    default=self.config_entry.options.get(CONF_ANTHROPIC_API_KEY, ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                    ),
+                ),
+                vol.Optional(
+                    CONF_NORDPOOL_ENTITY,
+                    default=self.config_entry.options.get(CONF_NORDPOOL_ENTITY, ""),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor"),
+                ),
+            }
+        )
 
         return self.async_show_form(
             step_id="coordinator_options",
-            data_schema=vol.Schema({}),
+            data_schema=options_schema,
         )
