@@ -16,6 +16,7 @@ from .const import (
     CONF_CHARGER_PRIORITY,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
+    COORDINATOR_STRATEGY_SMART,
     PRIORITY_LOW,
     PRIORITY_NORMAL,
     PRIORITY_HIGH,
@@ -57,6 +58,7 @@ class CoordinatorStrategySelect(SelectEntity):
     _attr_options = [
         COORDINATOR_STRATEGY_OFF,
         COORDINATOR_STRATEGY_EQUAL,
+        COORDINATOR_STRATEGY_SMART,
     ]
 
     def __init__(

@@ -20,7 +20,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .coordinator import KebaChargingCoordinator
-from .const import DOMAIN
+from .const import DOMAIN, COORDINATOR_STRATEGY_SMART
+from .smart_charging_sensor import async_setup_smart_charging_sensors
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +49,10 @@ async def async_setup_entry(
     ]
 
     async_add_entities(entities)
+
+    await async_setup_smart_charging_sensors(
+        hass, entry, coordinator, device_info, async_add_entities
+    )
 
 
 class CoordinatorBaseSensor(CoordinatorEntity[KebaChargingCoordinator], SensorEntity):

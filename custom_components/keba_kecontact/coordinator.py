@@ -17,7 +17,12 @@ from .const import (
     DOMAIN,
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
+    COORDINATOR_STRATEGY_SMART,
+    CONF_ANTHROPIC_API_KEY,
+    CONF_NORDPOOL_ENTITY,
 )
+
+from .smart_charger import SmartCharger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,6 +40,8 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         charger_entry_ids: list[str],
         max_current: int,
         strategy: str,
+        api_key: str | None = None,
+        nordpool_entity: str | None = None,
     ) -> None:
         """Initialize the charging coordinator."""
         self._name = name
@@ -50,11 +57,19 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._state_listener = None
         self._previous_active_count = 0
 
+        self._api_key = api_key
+        self._nordpool_entity = nordpool_entity
+        self._smart_charger: SmartCharger | None = None
+
     async def async_start(self) -> None:
         """Start the coordinator."""
         self._state_listener = self.hass.bus.async_listen(
             EVENT_STATE_CHANGED, self._handle_state_change
         )
+
+        if self._strategy == COORDINATOR_STRATEGY_SMART:
+            await self._enable_smart_charging()
+
         await self.async_refresh()
 
     async def async_stop(self) -> None:
@@ -62,6 +77,35 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._state_listener:
             self._state_listener()
             self._state_listener = None
+
+        if self._smart_charger:
+            await self._smart_charger.async_stop()
+            self._smart_charger = None
+
+    async def _enable_smart_charging(self) -> None:
+        """Enable AI-powered smart charging."""
+        if not self._api_key or not self._nordpool_entity:
+            _LOGGER.warning(
+                "Cannot enable smart charging: missing API key or Nordpool entity"
+            )
+            return
+
+        self._smart_charger = SmartCharger(
+            hass=self.hass,
+            api_key=self._api_key,
+            nordpool_entity_id=self._nordpool_entity,
+            charger_entry_ids=self._charger_entry_ids,
+            max_current=self._max_current,
+        )
+        await self._smart_charger.async_start()
+        _LOGGER.info("Smart charging enabled with Nordpool entity: %s", self._nordpool_entity)
+
+    async def _disable_smart_charging(self) -> None:
+        """Disable AI-powered smart charging."""
+        if self._smart_charger:
+            await self._smart_charger.async_stop()
+            self._smart_charger = None
+            _LOGGER.info("Smart charging disabled")
 
     @callback
     def _handle_state_change(self, event: Event) -> None:
@@ -150,6 +194,12 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._strategy == COORDINATOR_STRATEGY_OFF:
             return "Off - No load balancing"
 
+        if self._strategy == COORDINATOR_STRATEGY_SMART:
+            if self._smart_charger and self._smart_charger.active_plans:
+                num_plans = len(self._smart_charger.active_plans)
+                return f"AI Smart - {num_plans} active plan(s)"
+            return "AI Smart - Waiting for cars"
+
         active_chargers = [
             entry_id for entry_id, state in charger_states.items()
             if state.get("state") == 3
@@ -179,6 +229,9 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _apply_load_balancing(self) -> None:
         """Apply load balancing based on current strategy."""
         if self._strategy == COORDINATOR_STRATEGY_OFF:
+            return
+
+        if self._strategy == COORDINATOR_STRATEGY_SMART:
             return
 
         try:
@@ -346,8 +399,17 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def set_strategy(self, strategy: str) -> None:
         """Update load balancing strategy."""
+        old_strategy = self._strategy
         self._strategy = strategy
-        await self._apply_load_balancing()
+
+        if old_strategy == COORDINATOR_STRATEGY_SMART and strategy != COORDINATOR_STRATEGY_SMART:
+            await self._disable_smart_charging()
+
+        if strategy == COORDINATOR_STRATEGY_SMART and old_strategy != COORDINATOR_STRATEGY_SMART:
+            await self._enable_smart_charging()
+
+        if strategy != COORDINATOR_STRATEGY_SMART:
+            await self._apply_load_balancing()
 
     async def _send_display_message(self, client, message: str) -> None:
         """Send a message to charger display, truncating if necessary."""
@@ -374,3 +436,13 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def strategy(self) -> str:
         """Return the current strategy."""
         return self._strategy
+
+    @property
+    def smart_charger(self) -> SmartCharger | None:
+        """Return the smart charger instance."""
+        return self._smart_charger
+
+    def update_config(self, api_key: str | None, nordpool_entity: str | None) -> None:
+        """Update configuration for smart charging."""
+        self._api_key = api_key
+        self._nordpool_entity = nordpool_entity

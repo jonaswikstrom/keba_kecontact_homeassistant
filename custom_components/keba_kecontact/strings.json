@@ -17,5 +17,37 @@
     "abort": {
       "already_configured": "This charger is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "charger_options": {
+        "title": "Charger Options",
+        "description": "Configure options for this charger.",
+        "data": {
+          "rfid": "RFID Tag",
+          "rfid_class": "RFID Class",
+          "vehicle_soc_entity": "Vehicle State of Charge Entity",
+          "battery_capacity_kwh": "Battery Capacity (kWh)",
+          "departure_time": "Departure Time"
+        },
+        "data_description": {
+          "vehicle_soc_entity": "Select the sensor entity that reports your vehicle's current battery level (SoC). Required for AI smart charging.",
+          "battery_capacity_kwh": "Total battery capacity of the vehicle in kWh. Used by AI to calculate charging time.",
+          "departure_time": "Time when you need the vehicle ready. AI will optimize charging to finish by this time."
+        }
+      },
+      "coordinator_options": {
+        "title": "Coordinator Options",
+        "description": "Configure AI smart charging options.",
+        "data": {
+          "anthropic_api_key": "Anthropic API Key",
+          "nordpool_entity": "Nordpool Price Entity"
+        },
+        "data_description": {
+          "anthropic_api_key": "Your Anthropic API key for AI-powered charging optimization. Get one at console.anthropic.com",
+          "nordpool_entity": "Select the Nordpool sensor entity that provides electricity prices."
+        }
+      }
+    }
   }
 }
