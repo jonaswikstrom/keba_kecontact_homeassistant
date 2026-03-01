@@ -61,7 +61,7 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> KebaKeContactOptionsFlow:
         """Get the options flow for this handler."""
-        return KebaKeContactOptionsFlow(config_entry)
+        return KebaKeContactOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -173,10 +173,6 @@ class KebaKeContactConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Keba KeContact."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -219,7 +215,6 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_VEHICLE_SOC_ENTITY,
-                    description={"suggested_value": self.config_entry.options.get(CONF_VEHICLE_SOC_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),
@@ -239,8 +234,9 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_DEPARTURE_TIME,
-                    default=self.config_entry.options.get(CONF_DEPARTURE_TIME, "07:00:00"),
-                ): selector.TimeSelector(),
+                ): selector.TimeSelector(
+                    selector.TimeSelectorConfig(),
+                ),
             }
         )
 
@@ -265,7 +261,6 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_NORDPOOL_ENTITY,
-                    description={"suggested_value": self.config_entry.options.get(CONF_NORDPOOL_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),
