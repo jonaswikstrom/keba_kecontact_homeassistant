@@ -501,7 +501,7 @@ class AnthropicChargingPlanner:
 
         payload = {
             "model": model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "temperature": 0,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": prompt}],
