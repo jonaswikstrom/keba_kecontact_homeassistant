@@ -466,12 +466,21 @@ class AnthropicChargingPlanner:
         current_time: datetime,
     ) -> list[ChargingPlan]:
         """Parse the API response into ChargingPlan objects."""
+        import json
+        stop_reason = response.get("stop_reason", "unknown")
+        usage = response.get("usage", {})
+        _log_info("API stop_reason=%s, input_tokens=%s, output_tokens=%s",
+            stop_reason, usage.get("input_tokens"), usage.get("output_tokens"))
+
         content_list = response.get("content", [])
         _log_info("API response has %d content blocks", len(content_list))
         for i, c in enumerate(content_list):
             _log_info("Content[%d] type=%s, name=%s", i, c.get("type"), c.get("name", "N/A"))
             if c.get("type") == "text":
                 _log_info("Content[%d] text: %s", i, c.get("text", "")[:500])
+            if c.get("type") == "tool_use":
+                raw_input = json.dumps(c.get("input", {}))
+                _log_info("Content[%d] raw input (first 1000 chars): %s", i, raw_input[:1000])
 
         plans = []
 
