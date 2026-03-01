@@ -17,9 +17,10 @@ MODEL_HAIKU = "claude-3-5-haiku-latest"
 
 @dataclass
 class ChargingSlot:
-    """Represents a single hour's charging configuration."""
+    """Represents a single time slot's charging configuration."""
 
     hour: int
+    minute: int
     date: str
     current_amps: int
     expected_soc_after: float
@@ -30,6 +31,7 @@ class ChargingSlot:
         """Serialize to dictionary."""
         return {
             "hour": self.hour,
+            "minute": self.minute,
             "date": self.date,
             "current_amps": self.current_amps,
             "expected_soc_after": self.expected_soc_after,
@@ -42,6 +44,7 @@ class ChargingSlot:
         """Deserialize from dictionary."""
         return cls(
             hour=data["hour"],
+            minute=data.get("minute", 0),
             date=data["date"],
             current_amps=data["current_amps"],
             expected_soc_after=data.get("expected_soc_after", data.get("soc_after", 0)),
@@ -87,12 +90,32 @@ class ChargingPlan:
             status=data.get("status", "active"),
         )
 
-    def get_slot_for_hour(self, hour: int, date: str) -> ChargingSlot | None:
-        """Get the charging slot for a specific hour and date."""
+    def get_slot_for_time(self, hour: int, minute: int, date: str) -> ChargingSlot | None:
+        """Get the charging slot for a specific time and date."""
+        if not self.slots:
+            return None
+
+        minutes_per_slot = self._get_minutes_per_slot()
+        slot_minute = (minute // minutes_per_slot) * minutes_per_slot
+
         for slot in self.slots:
-            if slot.hour == hour and slot.date == date:
+            if slot.hour == hour and slot.minute == slot_minute and slot.date == date:
                 return slot
         return None
+
+    def _get_minutes_per_slot(self) -> int:
+        """Determine minutes per slot from the slots in this plan."""
+        if len(self.slots) < 2:
+            return 60
+
+        slots_sorted = sorted(self.slots, key=lambda s: (s.date, s.hour, s.minute))
+        for i in range(len(slots_sorted) - 1):
+            s1, s2 = slots_sorted[i], slots_sorted[i + 1]
+            if s1.date == s2.date:
+                diff = (s2.hour * 60 + s2.minute) - (s1.hour * 60 + s1.minute)
+                if diff > 0:
+                    return diff
+        return 60
 
 
 @dataclass
@@ -116,21 +139,37 @@ class ValidationResult:
     reason: str
 
 
+@dataclass
+class PriceSlot:
+    """A single price slot with time information."""
+
+    hour: int
+    minute: int
+    price: float
+    date: str
+
+
 SYSTEM_PROMPT = """You are an EV charging optimization AI. Your task is to create cost-optimal charging schedules while ensuring vehicles are ready by their departure times.
 
 CONSTRAINTS (MUST be satisfied):
-1. TOTAL MAX CURRENT: Sum of all chargers' current ≤ total_max_current_a at any hour
+1. TOTAL MAX CURRENT: Sum of all chargers' current ≤ total_max_current_a at any time slot
 2. MIN CURRENT PER CHARGER: Each charger gets either 0A (paused) OR ≥6A. Never 1-5A.
 3. MAX CURRENT PER CHARGER: Respect each charger's individual max_current_a limit
 4. DEPARTURE TIME: Each vehicle must reach near 100% SoC by its departure time
 
 CHARGING CALCULATIONS:
 - Three-phase charging: Power (kW) = Current (A) × 230V × 3 × 0.95 / 1000
-- Energy per hour (kWh) = Power (kW) × 1 hour
+- Energy per slot (kWh) = Power (kW) × (slot_duration_minutes / 60)
 - SoC increase = Energy (kWh) / Battery capacity (kWh) × 100%
 
+TIME SLOTS:
+- Prices are provided with variable resolution (15-min, 30-min, or hourly)
+- The slot duration is indicated in the prompt (e.g., "15-minute slots")
+- Create one charging slot per price slot, matching the exact times provided
+- Each slot needs hour AND minute fields (e.g., hour=14, minute=30 for 14:30)
+
 OPTIMIZATION GOAL:
-Minimize total electricity cost while meeting all constraints. Prefer cheaper hours when possible, but ensure vehicles are fully charged by departure.
+Minimize total electricity cost while meeting all constraints. Prefer cheaper slots when possible, but ensure vehicles are fully charged by departure.
 
 OUTPUT FORMAT:
 You must respond with valid JSON matching the tool schema exactly."""
@@ -154,13 +193,14 @@ CREATE_PLAN_TOOL = {
                                 "type": "object",
                                 "properties": {
                                     "hour": {"type": "integer", "minimum": 0, "maximum": 23},
+                                    "minute": {"type": "integer", "minimum": 0, "maximum": 59, "description": "Slot start minute (0, 15, 30, 45 for 15-min slots)"},
                                     "date": {"type": "string", "description": "ISO date YYYY-MM-DD"},
                                     "current_amps": {"type": "integer", "minimum": 0},
                                     "soc_after": {"type": "number"},
                                     "price": {"type": "number"},
                                     "cost": {"type": "number"},
                                 },
-                                "required": ["hour", "date", "current_amps", "soc_after", "price", "cost"],
+                                "required": ["hour", "minute", "date", "current_amps", "soc_after", "price", "cost"],
                             },
                         },
                         "total_cost": {"type": "number"},
@@ -199,8 +239,8 @@ class AnthropicChargingPlanner:
         self,
         chargers: list[ChargerRequirement],
         total_max_current_a: int,
-        today_prices: list[float],
-        tomorrow_prices: list[float] | None,
+        today_prices: list[PriceSlot],
+        tomorrow_prices: list[PriceSlot] | None,
         current_time: datetime | None = None,
     ) -> list[ChargingPlan]:
         """Create optimal charging plans for all chargers using Sonnet."""
@@ -222,8 +262,8 @@ class AnthropicChargingPlanner:
     async def validate_plan(
         self,
         current_plans: list[ChargingPlan],
-        new_prices_today: list[float],
-        new_prices_tomorrow: list[float] | None,
+        new_prices_today: list[PriceSlot],
+        new_prices_tomorrow: list[PriceSlot] | None,
     ) -> ValidationResult:
         """Check if plans need updating using Haiku."""
         prompt = self._build_validate_prompt(current_plans, new_prices_today, new_prices_tomorrow)
@@ -240,14 +280,17 @@ class AnthropicChargingPlanner:
         self,
         chargers: list[ChargerRequirement],
         total_max_current_a: int,
-        today_prices: list[float],
-        tomorrow_prices: list[float] | None,
+        today_prices: list[PriceSlot],
+        tomorrow_prices: list[PriceSlot] | None,
         current_time: datetime,
     ) -> str:
         """Build the prompt for plan creation."""
+        slot_minutes = self._get_slot_duration_minutes(today_prices)
+
         lines = [
             f"Current time: {current_time.strftime('%Y-%m-%d %H:%M')}",
             f"Total max current available: {total_max_current_a}A",
+            f"Slot duration: {slot_minutes} minutes",
             "",
             "CHARGERS TO PLAN:",
         ]
@@ -266,19 +309,20 @@ class AnthropicChargingPlanner:
 
         lines.append("")
         lines.append("ELECTRICITY PRICES (per kWh):")
-        lines.append(f"Today ({current_time.strftime('%Y-%m-%d')}):")
 
-        for hour, price in enumerate(today_prices):
-            if hour >= current_time.hour:
-                lines.append(f"  {hour:02d}:00 - {price:.4f}")
+        current_slot_start = current_time.hour * 60 + (current_time.minute // slot_minutes) * slot_minutes
+
+        if today_prices:
+            lines.append(f"Today ({today_prices[0].date}):")
+            for slot in today_prices:
+                slot_start = slot.hour * 60 + slot.minute
+                if slot_start >= current_slot_start:
+                    lines.append(f"  {slot.hour:02d}:{slot.minute:02d} - {slot.price:.4f}")
 
         if tomorrow_prices:
-            tomorrow = current_time.date()
-            from datetime import timedelta
-            tomorrow = tomorrow + timedelta(days=1)
-            lines.append(f"Tomorrow ({tomorrow.isoformat()}):")
-            for hour, price in enumerate(tomorrow_prices):
-                lines.append(f"  {hour:02d}:00 - {price:.4f}")
+            lines.append(f"Tomorrow ({tomorrow_prices[0].date}):")
+            for slot in tomorrow_prices:
+                lines.append(f"  {slot.hour:02d}:{slot.minute:02d} - {slot.price:.4f}")
         else:
             lines.append("Tomorrow's prices: Not available yet")
 
@@ -287,11 +331,26 @@ class AnthropicChargingPlanner:
 
         return "\n".join(lines)
 
+    def _get_slot_duration_minutes(self, prices: list[PriceSlot]) -> int:
+        """Determine slot duration in minutes from price data."""
+        if len(prices) < 2:
+            return 60
+
+        slots_per_day = len(prices)
+        if slots_per_day == 96:
+            return 15
+        elif slots_per_day == 48:
+            return 30
+        elif slots_per_day == 24:
+            return 60
+        else:
+            return 24 * 60 // slots_per_day
+
     def _build_validate_prompt(
         self,
         current_plans: list[ChargingPlan],
-        new_prices_today: list[float],
-        new_prices_tomorrow: list[float] | None,
+        new_prices_today: list[PriceSlot],
+        new_prices_tomorrow: list[PriceSlot] | None,
     ) -> str:
         """Build the prompt for plan validation."""
         lines = [
@@ -305,18 +364,20 @@ class AnthropicChargingPlanner:
             lines.append(f"  Total cost: {plan.total_cost:.2f}")
             lines.append("  Scheduled slots:")
             for slot in plan.slots:
-                lines.append(f"    {slot.date} {slot.hour:02d}:00 - {slot.current_amps}A @ {slot.price:.4f}")
+                lines.append(f"    {slot.date} {slot.hour:02d}:{slot.minute:02d} - {slot.current_amps}A @ {slot.price:.4f}")
 
         lines.append("")
         lines.append("NEW PRICES:")
-        lines.append("Today:")
-        for hour, price in enumerate(new_prices_today):
-            lines.append(f"  {hour:02d}:00 - {price:.4f}")
+
+        if new_prices_today:
+            lines.append(f"Today ({new_prices_today[0].date}):")
+            for slot in new_prices_today:
+                lines.append(f"  {slot.hour:02d}:{slot.minute:02d} - {slot.price:.4f}")
 
         if new_prices_tomorrow:
-            lines.append("Tomorrow:")
-            for hour, price in enumerate(new_prices_tomorrow):
-                lines.append(f"  {hour:02d}:00 - {price:.4f}")
+            lines.append(f"Tomorrow ({new_prices_tomorrow[0].date}):")
+            for slot in new_prices_tomorrow:
+                lines.append(f"  {slot.hour:02d}:{slot.minute:02d} - {slot.price:.4f}")
 
         lines.append("")
         lines.append(
@@ -388,6 +449,7 @@ class AnthropicChargingPlanner:
                     for slot_data in plan_data.get("slots", []):
                         slots.append(ChargingSlot(
                             hour=slot_data["hour"],
+                            minute=slot_data.get("minute", 0),
                             date=slot_data["date"],
                             current_amps=slot_data["current_amps"],
                             expected_soc_after=slot_data.get("soc_after", 0),
