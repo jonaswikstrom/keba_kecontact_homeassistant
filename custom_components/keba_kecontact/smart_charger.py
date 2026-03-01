@@ -130,13 +130,13 @@ class SmartCharger:
         if not new_state:
             return
 
-        tomorrow_valid = new_state.attributes.get("tomorrow_valid", False)
+        tomorrow_available = new_state.attributes.get("tomorrow_available", False)
 
-        if self._last_tomorrow_valid is False and tomorrow_valid is True:
+        if self._last_tomorrow_valid is False and tomorrow_available is True:
             _LOGGER.info("Tomorrow's prices now available, checking if replan needed")
             self.hass.async_create_task(self._replan_overnight_if_needed())
 
-        self._last_tomorrow_valid = tomorrow_valid
+        self._last_tomorrow_valid = tomorrow_available
 
     @callback
     def _handle_charger_state_change(self, event: Event) -> None:
@@ -523,19 +523,32 @@ class SmartCharger:
             return now.replace(hour=7, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
     def _get_nordpool_prices(self) -> tuple[list[float], list[float] | None]:
-        """Get today's and tomorrow's prices from Nordpool entity."""
+        """Get today's and tomorrow's prices from electricity price entity."""
         state = self.hass.states.get(self._nordpool_entity_id)
 
         if not state:
             return [], None
 
-        today = state.attributes.get("today", [])
-        tomorrow = None
+        today_raw = state.attributes.get("prices_today", [])
+        today = self._extract_prices_from_list(today_raw)
 
-        if state.attributes.get("tomorrow_valid"):
-            tomorrow = state.attributes.get("tomorrow", [])
+        tomorrow = None
+        if state.attributes.get("tomorrow_available"):
+            tomorrow_raw = state.attributes.get("prices_tomorrow", [])
+            tomorrow = self._extract_prices_from_list(tomorrow_raw)
 
         return today, tomorrow
+
+    def _extract_prices_from_list(self, price_list: list) -> list[float]:
+        """Extract price values from list of dicts, sorted by hour."""
+        if not price_list:
+            return []
+
+        if isinstance(price_list[0], dict):
+            sorted_prices = sorted(price_list, key=lambda x: x.get("hour", 0))
+            return [item.get("price", 0.0) for item in sorted_prices]
+
+        return price_list
 
     def _get_state_entity_id(self, entry_id: str) -> str | None:
         """Get the state entity ID for a charger entry."""
