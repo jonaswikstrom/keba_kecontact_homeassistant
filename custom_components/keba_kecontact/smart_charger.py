@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta, time
 from typing import Any, TYPE_CHECKING
+from pathlib import Path
 
 from homeassistant.core import HomeAssistant, callback, Event
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
@@ -32,6 +34,60 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+_FILE_LOG: logging.Logger | None = None
+
+
+def _setup_file_logger() -> logging.Logger | None:
+    """Create a file logger that writes to config directory."""
+    file_logger = logging.getLogger("keba_smart_charging_file")
+    if file_logger.handlers:
+        return file_logger
+
+    file_logger.setLevel(logging.DEBUG)
+    try:
+        log_path = Path("/config/keba_smart_charging.log")
+        if not log_path.parent.exists():
+            log_path = Path.home() / "keba_smart_charging.log"
+        handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        ))
+        file_logger.addHandler(handler)
+        file_logger.info("=== Smart charging file logger started ===")
+        return file_logger
+    except Exception as e:
+        _LOGGER.warning("Could not create file logger: %s", e)
+        return None
+
+
+def _log(level: int, msg: str, *args, exc_info: bool = False) -> None:
+    """Log to both standard logger and file logger."""
+    _LOGGER.log(level, msg, *args, exc_info=exc_info)
+    if _FILE_LOG:
+        _FILE_LOG.log(level, msg, *args)
+        if exc_info:
+            import traceback
+            _FILE_LOG.error(traceback.format_exc())
+
+
+def _log_debug(msg: str, *args) -> None:
+    _log(logging.DEBUG, msg, *args)
+
+
+def _log_info(msg: str, *args) -> None:
+    _log(logging.INFO, msg, *args)
+
+
+def _log_warning(msg: str, *args) -> None:
+    _log(logging.WARNING, msg, *args)
+
+
+def _log_error(msg: str, *args, exc_info: bool = False) -> None:
+    _log(logging.ERROR, msg, *args, exc_info=exc_info)
+
+
+_FILE_LOG = _setup_file_logger()
 
 
 class SmartCharger:
@@ -117,11 +173,8 @@ class SmartCharger:
                 )
                 self._unsub_charger_states.append(unsub)
 
-        _LOGGER.info(
-            "Smart charger started with %d chargers, max current %dA",
-            len(self._charger_entry_ids),
-            self._max_current,
-        )
+        _log_info("Smart charger started with %d chargers, max current %dA",
+            len(self._charger_entry_ids), self._max_current)
 
         if self.hass.is_running:
             self.hass.async_create_task(self._check_already_connected_cars())
@@ -134,39 +187,39 @@ class SmartCharger:
     async def _on_homeassistant_started(self, event: Event) -> None:
         """Handle Home Assistant started event."""
         import asyncio
-        _LOGGER.info("Home Assistant started, waiting 2s before checking connected cars...")
+        _log_info("Home Assistant started, waiting 2s before checking connected cars...")
         await asyncio.sleep(2)
         await self._check_already_connected_cars()
 
     async def _check_already_connected_cars(self) -> None:
         """Check for cars that are already connected at startup."""
-        _LOGGER.info("Checking for already connected cars at startup...")
-        _LOGGER.info("Charger entry IDs: %s", self._charger_entry_ids)
-        _LOGGER.info("hass.data[DOMAIN] keys: %s", list(self.hass.data.get(DOMAIN, {}).keys()))
+        _log_info("Checking for already connected cars at startup...")
+        _log_info("Charger entry IDs: %s", self._charger_entry_ids)
+        _log_info("hass.data[DOMAIN] keys: %s", list(self.hass.data.get(DOMAIN, {}).keys()))
 
         for entry_id in self._charger_entry_ids:
             entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
             config_entry = entry_data.get("config_entry")
-            _LOGGER.info("Entry %s: has_data=%s, has_config=%s", entry_id, bool(entry_data), bool(config_entry))
+            _log_info("Entry %s: has_data=%s, has_config=%s", entry_id, bool(entry_data), bool(config_entry))
             if config_entry:
                 opts = config_entry.options
-                _LOGGER.info("  options: soc=%s, battery=%s, departure=%s",
+                _log_info("  options: soc=%s, battery=%s, departure=%s",
                     opts.get('vehicle_soc_entity'), opts.get('battery_capacity_kwh'), opts.get('departure_time'))
 
             ai_ready = self._is_charger_ai_ready(entry_id)
             state_entity = self._get_state_entity_id(entry_id)
             state = self.hass.states.get(state_entity) if state_entity else None
-            _LOGGER.info("  ai_ready=%s, state_entity=%s, state=%s", ai_ready, state_entity, state.state if state else None)
+            _log_info("  ai_ready=%s, state_entity=%s, state=%s", ai_ready, state_entity, state.state if state else None)
 
         connected = self._get_connected_chargers()
-        _LOGGER.info("Connected chargers found: %s", connected)
+        _log_info("Connected chargers found: %s", connected)
 
         if connected:
-            _LOGGER.info("Found %d already connected charger(s)", len(connected))
+            _log_info("Found %d already connected charger(s)", len(connected))
             for entry_id in connected:
                 await self._on_car_connected(entry_id)
         else:
-            _LOGGER.info("No AI-ready connected chargers found at startup")
+            _log_info("No AI-ready connected chargers found at startup")
 
     async def async_stop(self) -> None:
         """Stop the smart charger."""
@@ -291,16 +344,21 @@ class SmartCharger:
                 requirements.append(req)
 
         if not requirements:
-            _LOGGER.debug("No valid charger requirements, skipping planning")
+            _log_warning("No valid charger requirements, skipping planning")
             self._last_error = "No valid charger requirements (check SoC entity, battery capacity, departure time)"
             return
 
         today_prices, tomorrow_prices = self._get_nordpool_prices()
+        _log_info("Got %d today prices, %s tomorrow prices",
+            len(today_prices), len(tomorrow_prices) if tomorrow_prices else "no")
 
         if not today_prices:
-            _LOGGER.warning("No Nordpool prices available, cannot create plan")
+            _log_warning("No Nordpool prices available, cannot create plan")
             self._last_error = "No Nordpool prices available"
             return
+
+        _log_info("Calling AI planner with %d chargers, %d today slots",
+            len(requirements), len(today_prices))
 
         try:
             plans = await self._planner.create_plan(
@@ -313,17 +371,13 @@ class SmartCharger:
             self._last_error = None
             for plan in plans:
                 self._active_plans[plan.charger_id] = plan
-                _LOGGER.info(
-                    "Created plan for %s: %d slots, total cost %.2f, reason: %s",
-                    plan.charger_id,
-                    len(plan.slots),
-                    plan.total_cost,
-                    plan.reasoning[:100],
-                )
+                _log_info("Created plan for %s: %d slots, total cost %.2f, reason: %s",
+                    plan.charger_id, len(plan.slots), plan.total_cost, plan.reasoning[:100])
 
         except Exception as err:
-            _LOGGER.error("AI planning failed: %s", err, exc_info=True)
-            self._last_error = f"AI planning failed: {err}"
+            msg = f"AI planning failed: {err}"
+            _log_error(msg, exc_info=True)
+            self._last_error = msg
 
     async def _check_charging_progress(self, now: datetime) -> None:
         """Check if actual charging progress matches the plan, replan if needed."""
@@ -595,28 +649,45 @@ class SmartCharger:
 
     def _get_nordpool_prices(self) -> tuple[list[PriceSlot], list[PriceSlot] | None]:
         """Get today's and tomorrow's prices from electricity price entity."""
+        _log_debug("Getting Nordpool prices from %s", self._nordpool_entity_id)
         state = self.hass.states.get(self._nordpool_entity_id)
 
         if not state:
-            self._last_error = f"Nordpool entity '{self._nordpool_entity_id}' not found"
+            msg = f"Nordpool entity '{self._nordpool_entity_id}' not found"
+            _log_error(msg)
+            self._last_error = msg
             return [], None
 
         unit = state.attributes.get("unit_of_measurement", "")
         multiplier = self._get_price_multiplier(unit)
+        _log_debug("Price unit: %s, multiplier: %s", unit, multiplier)
 
         today_raw = state.attributes.get("prices_today", [])
+        _log_info("prices_today has %d entries, type: %s",
+            len(today_raw) if today_raw else 0,
+            type(today_raw[0]).__name__ if today_raw else "empty")
+
         today_date = datetime.now().date().isoformat()
         today = self._extract_prices_to_slots(today_raw, today_date, multiplier)
 
         if not today:
-            self._last_error = f"No prices_today in '{self._nordpool_entity_id}'"
+            msg = f"No prices_today in '{self._nordpool_entity_id}'"
+            _log_error(msg)
+            self._last_error = msg
             return [], None
+
+        _log_info("Extracted %d price slots for today", len(today))
+        if today:
+            _log_debug("First slot: %s:%s = %s, Last slot: %s:%s = %s",
+                today[0].hour, today[0].minute, today[0].price,
+                today[-1].hour, today[-1].minute, today[-1].price)
 
         tomorrow = None
         if state.attributes.get("tomorrow_available"):
             tomorrow_raw = state.attributes.get("prices_tomorrow", [])
             tomorrow_date = (datetime.now().date() + timedelta(days=1)).isoformat()
             tomorrow = self._extract_prices_to_slots(tomorrow_raw, tomorrow_date, multiplier)
+            _log_info("Extracted %d price slots for tomorrow", len(tomorrow) if tomorrow else 0)
 
         return today, tomorrow
 
@@ -640,17 +711,41 @@ class SmartCharger:
         minutes_per_slot = (24 * 60) // slots_count
 
         if isinstance(price_list[0], dict):
-            sorted_prices = sorted(price_list, key=lambda x: x.get("hour", 0))
-            slots = []
-            for i, item in enumerate(sorted_prices):
-                total_minutes = i * minutes_per_slot
-                slots.append(PriceSlot(
-                    hour=total_minutes // 60,
-                    minute=total_minutes % 60,
-                    price=item.get("price", 0.0) * multiplier,
-                    date=date,
-                ))
-            return slots
+            first = price_list[0]
+            if "start" in first:
+                prices = sorted(price_list, key=lambda x: x.get("start", ""))
+                slots = []
+                for i, item in enumerate(prices):
+                    total_minutes = i * minutes_per_slot
+                    slots.append(PriceSlot(
+                        hour=total_minutes // 60,
+                        minute=total_minutes % 60,
+                        price=item.get("price", item.get("value", 0.0)) * multiplier,
+                        date=date,
+                    ))
+                return slots
+            elif slots_count == 24 and "hour" in first:
+                prices = sorted(price_list, key=lambda x: x.get("hour", 0))
+                slots = []
+                for item in prices:
+                    slots.append(PriceSlot(
+                        hour=item.get("hour", 0),
+                        minute=0,
+                        price=item.get("price", 0.0) * multiplier,
+                        date=date,
+                    ))
+                return slots
+            else:
+                slots = []
+                for i, item in enumerate(price_list):
+                    total_minutes = i * minutes_per_slot
+                    slots.append(PriceSlot(
+                        hour=total_minutes // 60,
+                        minute=total_minutes % 60,
+                        price=item.get("price", item.get("value", 0.0)) * multiplier,
+                        date=date,
+                    ))
+                return slots
 
         slots = []
         for i, price in enumerate(price_list):
