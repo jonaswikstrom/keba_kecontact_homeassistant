@@ -19,6 +19,7 @@ from .anthropic_client import (
     ChargingPlan,
     ChargerRequirement,
     PriceSlot,
+    TokenUsage,
 )
 from .charging_history import ChargingHistoryTracker
 from .const import (
@@ -131,6 +132,11 @@ class SmartCharger:
     def clear_error(self) -> None:
         """Clear the last error."""
         self._last_error = None
+
+    @property
+    def token_usage(self) -> TokenUsage:
+        """Return API token usage statistics."""
+        return self._planner.token_usage
 
     @property
     def active_plans(self) -> dict[str, ChargingPlan]:

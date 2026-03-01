@@ -262,12 +262,49 @@ VALIDATE_PLAN_TOOL = {
 }
 
 
+@dataclass
+class TokenUsage:
+    """Tracks API token usage statistics."""
+
+    total_input: int = 0
+    total_output: int = 0
+    sonnet_input: int = 0
+    sonnet_output: int = 0
+    haiku_input: int = 0
+    haiku_output: int = 0
+    api_calls: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.total_input + self.total_output
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_tokens": self.total,
+            "total_input": self.total_input,
+            "total_output": self.total_output,
+            "sonnet_input": self.sonnet_input,
+            "sonnet_output": self.sonnet_output,
+            "sonnet_total": self.sonnet_input + self.sonnet_output,
+            "haiku_input": self.haiku_input,
+            "haiku_output": self.haiku_output,
+            "haiku_total": self.haiku_input + self.haiku_output,
+            "api_calls": self.api_calls,
+        }
+
+
 class AnthropicChargingPlanner:
     """Anthropic API client for EV charging optimization."""
 
     def __init__(self, api_key: str) -> None:
         """Initialize the planner with API key."""
         self._api_key = api_key
+        self._token_usage = TokenUsage()
+
+    @property
+    def token_usage(self) -> TokenUsage:
+        """Return token usage statistics."""
+        return self._token_usage
 
     async def create_plan(
         self,
@@ -465,6 +502,7 @@ class AnthropicChargingPlanner:
         payload = {
             "model": model,
             "max_tokens": 4096,
+            "temperature": 0,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": prompt}],
             "tools": tools,
@@ -485,7 +523,26 @@ class AnthropicChargingPlanner:
                     _LOGGER.error("Anthropic API error %d: %s", response.status, error_text)
                     raise RuntimeError(f"Anthropic API error: {response.status}")
 
-                return await response.json()
+                result = await response.json()
+                self._track_tokens(model, result)
+                return result
+
+    def _track_tokens(self, model: str, response: dict[str, Any]) -> None:
+        """Track token usage from API response."""
+        usage = response.get("usage", {})
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+
+        self._token_usage.total_input += input_tokens
+        self._token_usage.total_output += output_tokens
+        self._token_usage.api_calls += 1
+
+        if model == MODEL_SONNET:
+            self._token_usage.sonnet_input += input_tokens
+            self._token_usage.sonnet_output += output_tokens
+        elif model == MODEL_HAIKU:
+            self._token_usage.haiku_input += input_tokens
+            self._token_usage.haiku_output += output_tokens
 
     def _parse_create_response(
         self,
