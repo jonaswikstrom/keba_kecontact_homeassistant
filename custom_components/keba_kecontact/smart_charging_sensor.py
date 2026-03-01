@@ -33,6 +33,7 @@ async def async_setup_smart_charging_sensors(
         SmartChargingReasoningSensor(coordinator, entry, device_info),
         SmartChargingNextWindowSensor(coordinator, entry, device_info),
         SmartChargingActiveBinarySensor(coordinator, entry, device_info),
+        SmartChargingTokenUsageSensor(coordinator, entry, device_info),
     ]
 
     for charger_entry_id in coordinator.charger_entry_ids:
@@ -378,3 +379,43 @@ class ChargerChargingRateSensor(SensorEntity):
             "sessions_recorded": len(sessions),
             "efficiency_kwh_per_percent": round(efficiency, 3) if efficiency else None,
         }
+
+
+class SmartChargingTokenUsageSensor(RestoreEntity, SensorEntity):
+    """Sensor showing AI token usage statistics."""
+
+    _attr_icon = "mdi:counter"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(
+        self,
+        coordinator: KebaChargingCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        self._coordinator = coordinator
+        self._entry = entry
+        self._attr_device_info = device_info
+        self._attr_unique_id = f"{entry.entry_id}_ai_token_usage"
+        self._attr_has_entity_name = True
+        self._attr_name = "AI Token Usage"
+
+    @property
+    def native_value(self) -> int:
+        """Return the total token count."""
+        if not self._coordinator.smart_charger:
+            return 0
+        return self._coordinator.smart_charger.token_usage.total
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        """Return the unit."""
+        return "tokens"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return per-model token breakdown."""
+        if not self._coordinator.smart_charger:
+            return {}
+        return self._coordinator.smart_charger.token_usage.to_dict()

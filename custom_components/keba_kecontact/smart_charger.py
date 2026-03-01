@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import os
 from datetime import datetime, timedelta, time
 from typing import Any, TYPE_CHECKING
@@ -19,6 +20,7 @@ from .anthropic_client import (
     ChargingPlan,
     ChargerRequirement,
     PriceSlot,
+    TokenUsage,
 )
 from .charging_history import ChargingHistoryTracker
 from .const import (
@@ -48,7 +50,9 @@ def _setup_file_logger() -> logging.Logger | None:
         log_path = Path("/config/keba_smart_charging.log")
         if not log_path.parent.exists():
             log_path = Path.home() / "keba_smart_charging.log"
-        handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        handler = logging.handlers.RotatingFileHandler(
+            log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+        )
         handler.setFormatter(logging.Formatter(
             "%(asctime)s %(levelname)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
@@ -133,6 +137,11 @@ class SmartCharger:
         self._last_error = None
 
     @property
+    def token_usage(self) -> TokenUsage:
+        """Return API token usage statistics."""
+        return self._planner.token_usage
+
+    @property
     def active_plans(self) -> dict[str, ChargingPlan]:
         """Return all active plans."""
         return self._active_plans.copy()
@@ -215,9 +224,20 @@ class SmartCharger:
         _log_info("Connected chargers found: %s", connected)
 
         if connected:
-            _log_info("Found %d already connected charger(s)", len(connected))
+            _log_info("Found %d already connected charger(s), creating single batch plan", len(connected))
             for entry_id in connected:
-                await self._on_car_connected(entry_id)
+                soc_entity = self._get_charger_soc_entity(entry_id)
+                if soc_entity:
+                    current_soc = self._get_soc_normalized(soc_entity)
+                    session_energy = self._get_charger_session_energy(entry_id)
+                    if current_soc is not None:
+                        self._history_tracker.start_session(
+                            entry_id,
+                            soc_entity,
+                            current_soc,
+                            session_energy or 0,
+                        )
+            await self._create_plans_for_chargers(connected)
         else:
             _log_info("No AI-ready connected chargers found at startup")
 
