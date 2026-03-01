@@ -11,8 +11,8 @@ import aiohttp
 _LOGGER = logging.getLogger(__name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-MODEL_SONNET = "claude-3-5-sonnet-latest"
-MODEL_HAIKU = "claude-3-5-haiku-latest"
+MODEL_SONNET = "claude-sonnet-4-20250514"
+MODEL_HAIKU = "claude-3-5-haiku-20241022"
 
 
 @dataclass
