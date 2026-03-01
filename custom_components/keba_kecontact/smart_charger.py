@@ -110,6 +110,20 @@ class SmartCharger:
             self._max_current,
         )
 
+        self.hass.async_create_task(self._check_already_connected_cars())
+
+    async def _check_already_connected_cars(self) -> None:
+        """Check for cars that are already connected at startup."""
+        connected = self._get_all_connected_chargers()
+        if connected:
+            _LOGGER.info(
+                "Found %d already connected charger(s) at startup: %s",
+                len(connected),
+                connected,
+            )
+            for entry_id in connected:
+                await self._on_car_connected(entry_id)
+
     async def async_stop(self) -> None:
         """Stop the smart charger."""
         if self._unsub_nordpool:
@@ -155,10 +169,10 @@ class SmartCharger:
         old_value = old_state.state
         new_value = new_state.state
 
-        if old_value == "not_ready" and new_value in ("ready", "charging"):
+        if old_value == "Not ready for charging" and new_value in ("Ready for charging", "Charging"):
             _LOGGER.info("Car connected to charger %s (state: %s), initiating AI planning", entry_id, new_value)
             self.hass.async_create_task(self._on_car_connected(entry_id))
-        elif old_value in ("ready", "charging") and new_value == "not_ready":
+        elif old_value in ("Ready for charging", "Charging") and new_value == "Not ready for charging":
             _LOGGER.info("Car disconnected from charger %s", entry_id)
             self.hass.async_create_task(self._on_car_disconnected(entry_id))
 
@@ -442,7 +456,7 @@ class SmartCharger:
             state_entity = self._get_state_entity_id(entry_id)
             if state_entity:
                 state = self.hass.states.get(state_entity)
-                if state and state.state in ("charging", "ready"):
+                if state and state.state in ("Charging", "Ready for charging"):
                     connected.append(entry_id)
 
         return connected
@@ -573,7 +587,7 @@ class SmartCharger:
             return None
 
         serial = config_entry.title.split("(")[-1].rstrip(")")
-        return f"sensor.keba_kecontact_{serial.lower()}_state"
+        return f"sensor.keba_kecontact_{serial.lower()}_status"
 
     def _get_entry_id_from_state_entity(self, entity_id: str) -> str | None:
         """Get entry ID from a state entity ID."""
