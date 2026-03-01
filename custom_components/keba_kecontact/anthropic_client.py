@@ -432,9 +432,16 @@ class AnthropicChargingPlanner:
         current_time: datetime,
     ) -> list[ChargingPlan]:
         """Parse the API response into ChargingPlan objects."""
+        _LOGGER.debug("API response: %s", response)
+
+        content_list = response.get("content", [])
+        _LOGGER.info("Response has %d content blocks", len(content_list))
+        for i, c in enumerate(content_list):
+            _LOGGER.info("Content[%d] type=%s, name=%s", i, c.get("type"), c.get("name", "N/A"))
+
         plans = []
 
-        for content in response.get("content", []):
+        for content in content_list:
             if content.get("type") == "tool_use" and content.get("name") == "create_charging_plan":
                 tool_input = content.get("input", {})
                 reasoning = tool_input.get("reasoning", "")
