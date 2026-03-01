@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from pathlib import Path
@@ -26,7 +27,9 @@ def _get_file_logger() -> logging.Logger | None:
         log_path = Path("/config/keba_smart_charging.log")
         if not log_path.parent.exists():
             log_path = Path.home() / "keba_smart_charging.log"
-        handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        handler = logging.handlers.RotatingFileHandler(
+            log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+        )
         handler.setFormatter(logging.Formatter(
             "%(asctime)s [API] %(levelname)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
