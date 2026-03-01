@@ -478,35 +478,44 @@ class AnthropicChargingPlanner:
         for content in content_list:
             if content.get("type") == "tool_use" and content.get("name") == "create_charging_plan":
                 tool_input = content.get("input", {})
+                _log_info("tool_input keys: %s", list(tool_input.keys()))
+                plans_data = tool_input.get("plans", [])
+                _log_info("plans array length: %d", len(plans_data))
+                if plans_data:
+                    _log_info("First plan keys: %s", list(plans_data[0].keys()) if plans_data else [])
                 reasoning = tool_input.get("reasoning", "")
 
-                for plan_data in tool_input.get("plans", []):
-                    charger_id = plan_data["charger_id"]
+                for plan_data in plans_data:
+                    try:
+                        charger_id = plan_data["charger_id"]
+                        _log_info("Parsing plan for charger_id: %s", charger_id)
 
-                    charger = next((c for c in chargers if c.charger_id == charger_id), None)
-                    departure = charger.departure_time if charger else current_time
+                        charger = next((c for c in chargers if c.charger_id == charger_id), None)
+                        departure = charger.departure_time if charger else current_time
 
-                    slots = []
-                    for slot_data in plan_data.get("slots", []):
-                        slots.append(ChargingSlot(
-                            hour=slot_data["hour"],
-                            minute=slot_data.get("minute", 0),
-                            date=slot_data["date"],
-                            current_amps=slot_data["current_amps"],
-                            expected_soc_after=slot_data.get("soc_after", 0),
-                            price=slot_data["price"],
-                            cost=slot_data["cost"],
+                        slots = []
+                        for slot_data in plan_data.get("slots", []):
+                            slots.append(ChargingSlot(
+                                hour=slot_data["hour"],
+                                minute=slot_data.get("minute", 0),
+                                date=slot_data["date"],
+                                current_amps=slot_data["current_amps"],
+                                expected_soc_after=slot_data.get("soc_after", 0),
+                                price=slot_data["price"],
+                                cost=slot_data["cost"],
+                            ))
+
+                        plans.append(ChargingPlan(
+                            charger_id=charger_id,
+                            created_at=current_time,
+                            departure_time=departure,
+                            slots=slots,
+                            total_cost=plan_data.get("total_cost", 0.0),
+                            reasoning=reasoning,
+                            status="active",
                         ))
-
-                    plans.append(ChargingPlan(
-                        charger_id=charger_id,
-                        created_at=current_time,
-                        departure_time=departure,
-                        slots=slots,
-                        total_cost=plan_data.get("total_cost", 0.0),
-                        reasoning=reasoning,
-                        status="active",
-                    ))
+                    except Exception as e:
+                        _log_info("Failed to parse plan: %s, plan_data=%s", e, str(plan_data)[:500])
 
         if not plans:
             _LOGGER.error("Failed to parse charging plans from API response")
