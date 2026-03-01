@@ -173,7 +173,7 @@ class SmartCharger:
         try:
             soc_entity = self._get_charger_soc_entity(triggered_entry_id)
             if soc_entity:
-                current_soc = self._get_entity_state_float(soc_entity)
+                current_soc = self._get_soc_normalized(soc_entity)
                 session_energy = self._get_charger_session_energy(triggered_entry_id)
                 if current_soc is not None:
                     self._history_tracker.start_session(
@@ -197,7 +197,7 @@ class SmartCharger:
 
         soc_entity = self._get_charger_soc_entity(entry_id)
         if soc_entity:
-            current_soc = self._get_entity_state_float(soc_entity)
+            current_soc = self._get_soc_normalized(soc_entity)
             session_energy = self._get_charger_session_energy(entry_id)
             if current_soc is not None:
                 await self._history_tracker.end_session(
@@ -275,7 +275,7 @@ class SmartCharger:
             if not soc_entity:
                 continue
 
-            actual_soc = self._get_entity_state_float(soc_entity)
+            actual_soc = self._get_soc_normalized(soc_entity)
             if actual_soc is None:
                 continue
 
@@ -479,7 +479,7 @@ class SmartCharger:
         if not soc_entity:
             return None
 
-        current_soc = self._get_entity_state_float(soc_entity)
+        current_soc = self._get_soc_normalized(soc_entity)
         if current_soc is None:
             _LOGGER.warning("Could not get SoC for %s from %s", entry_id, soc_entity)
             return None
@@ -529,26 +529,40 @@ class SmartCharger:
         if not state:
             return [], None
 
+        unit = state.attributes.get("unit_of_measurement", "")
+        multiplier = self._get_price_multiplier(unit)
+
         today_raw = state.attributes.get("prices_today", [])
-        today = self._extract_prices_from_list(today_raw)
+        today = self._extract_prices_from_list(today_raw, multiplier)
 
         tomorrow = None
         if state.attributes.get("tomorrow_available"):
             tomorrow_raw = state.attributes.get("prices_tomorrow", [])
-            tomorrow = self._extract_prices_from_list(tomorrow_raw)
+            tomorrow = self._extract_prices_from_list(tomorrow_raw, multiplier)
 
         return today, tomorrow
 
-    def _extract_prices_from_list(self, price_list: list) -> list[float]:
+    def _get_price_multiplier(self, unit: str) -> float:
+        """Get multiplier to normalize price to currency/kWh."""
+        unit_lower = unit.lower()
+        if "mwh" in unit_lower:
+            return 0.001
+        if "öre" in unit_lower or "ore" in unit_lower or "cent" in unit_lower:
+            return 0.01
+        return 1.0
+
+    def _extract_prices_from_list(
+        self, price_list: list, multiplier: float = 1.0
+    ) -> list[float]:
         """Extract price values from list of dicts, sorted by hour."""
         if not price_list:
             return []
 
         if isinstance(price_list[0], dict):
             sorted_prices = sorted(price_list, key=lambda x: x.get("hour", 0))
-            return [item.get("price", 0.0) for item in sorted_prices]
+            return [item.get("price", 0.0) * multiplier for item in sorted_prices]
 
-        return price_list
+        return [p * multiplier for p in price_list]
 
     def _get_state_entity_id(self, entry_id: str) -> str | None:
         """Get the state entity ID for a charger entry."""
@@ -577,6 +591,21 @@ class SmartCharger:
             return float(state.state)
         except (ValueError, TypeError):
             return None
+
+    def _get_soc_normalized(self, entity_id: str) -> float | None:
+        """Get SoC value normalized to 0-100 range."""
+        state = self.hass.states.get(entity_id)
+        if not state or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            value = float(state.state)
+        except (ValueError, TypeError):
+            return None
+
+        unit = state.attributes.get("unit_of_measurement", "")
+        if unit == "%" or value > 1.0:
+            return value
+        return value * 100
 
     def _get_charger_soc_entity(self, entry_id: str) -> str | None:
         """Get the configured SoC entity for a charger."""

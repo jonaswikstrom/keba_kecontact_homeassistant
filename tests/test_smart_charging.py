@@ -601,3 +601,86 @@ class TestSmartChargerNordpoolReading:
 
         assert today == []
         assert tomorrow is None
+
+    def test_get_nordpool_prices_converts_mwh_to_kwh(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        mock_hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.attributes = {
+            "prices_today": [{"hour": 0, "price": 300.0}],
+            "tomorrow_available": False,
+            "unit_of_measurement": "EUR/MWh",
+        }
+        mock_hass.states.get.return_value = mock_state
+
+        charger = SmartCharger(mock_hass, "api_key", "sensor.electricity_price", [], 32)
+
+        today, _ = charger._get_nordpool_prices()
+
+        assert today[0] == pytest.approx(0.30)
+
+    def test_get_nordpool_prices_converts_ore_to_sek(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        mock_hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.attributes = {
+            "prices_today": [{"hour": 0, "price": 150.0}],
+            "tomorrow_available": False,
+            "unit_of_measurement": "öre/kWh",
+        }
+        mock_hass.states.get.return_value = mock_state
+
+        charger = SmartCharger(mock_hass, "api_key", "sensor.electricity_price", [], 32)
+
+        today, _ = charger._get_nordpool_prices()
+
+        assert today[0] == pytest.approx(1.50)
+
+
+class TestSocNormalization:
+    def test_soc_percent_unchanged(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        mock_hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.state = "75"
+        mock_state.attributes = {"unit_of_measurement": "%"}
+        mock_hass.states.get.return_value = mock_state
+
+        charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
+
+        result = charger._get_soc_normalized("sensor.car_soc")
+
+        assert result == 75.0
+
+    def test_soc_fraction_converted_to_percent(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        mock_hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.state = "0.75"
+        mock_state.attributes = {}
+        mock_hass.states.get.return_value = mock_state
+
+        charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
+
+        result = charger._get_soc_normalized("sensor.car_soc")
+
+        assert result == 75.0
+
+    def test_soc_large_value_unchanged(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        mock_hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.state = "42"
+        mock_state.attributes = {}
+        mock_hass.states.get.return_value = mock_state
+
+        charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
+
+        result = charger._get_soc_normalized("sensor.car_soc")
+
+        assert result == 42.0
