@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, time
 from typing import Any, TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, callback, Event
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
@@ -58,6 +59,7 @@ class SmartCharger:
         self._unsub_interval: callable | None = None
         self._unsub_progress_check: callable | None = None
         self._unsub_charger_states: list[callable] = []
+        self._unsub_start_event: callable | None = None
 
         self._last_tomorrow_valid: bool | None = None
         self._planning_in_progress = False
@@ -110,19 +112,50 @@ class SmartCharger:
             self._max_current,
         )
 
-        self.hass.async_create_task(self._check_already_connected_cars())
+        if self.hass.is_running:
+            self.hass.async_create_task(self._check_already_connected_cars())
+        else:
+            self._unsub_start_event = self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED,
+                self._on_homeassistant_started,
+            )
+
+    async def _on_homeassistant_started(self, event: Event) -> None:
+        """Handle Home Assistant started event."""
+        import asyncio
+        _LOGGER.info("Home Assistant started, waiting 2s before checking connected cars...")
+        await asyncio.sleep(2)
+        await self._check_already_connected_cars()
 
     async def _check_already_connected_cars(self) -> None:
         """Check for cars that are already connected at startup."""
+        _LOGGER.info("Checking for already connected cars at startup...")
+        _LOGGER.info("Charger entry IDs: %s", self._charger_entry_ids)
+        _LOGGER.info("hass.data[DOMAIN] keys: %s", list(self.hass.data.get(DOMAIN, {}).keys()))
+
+        for entry_id in self._charger_entry_ids:
+            entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+            config_entry = entry_data.get("config_entry")
+            _LOGGER.info("Entry %s: has_data=%s, has_config=%s", entry_id, bool(entry_data), bool(config_entry))
+            if config_entry:
+                opts = config_entry.options
+                _LOGGER.info("  options: soc=%s, battery=%s, departure=%s",
+                    opts.get('vehicle_soc_entity'), opts.get('battery_capacity_kwh'), opts.get('departure_time'))
+
+            ai_ready = self._is_charger_ai_ready(entry_id)
+            state_entity = self._get_state_entity_id(entry_id)
+            state = self.hass.states.get(state_entity) if state_entity else None
+            _LOGGER.info("  ai_ready=%s, state_entity=%s, state=%s", ai_ready, state_entity, state.state if state else None)
+
         connected = self._get_connected_chargers()
+        _LOGGER.info("Connected chargers found: %s", connected)
+
         if connected:
-            _LOGGER.info(
-                "Found %d already connected charger(s) at startup: %s",
-                len(connected),
-                connected,
-            )
+            _LOGGER.info("Found %d already connected charger(s)", len(connected))
             for entry_id in connected:
                 await self._on_car_connected(entry_id)
+        else:
+            _LOGGER.info("No AI-ready connected chargers found at startup")
 
     async def async_stop(self) -> None:
         """Stop the smart charger."""
@@ -467,13 +500,20 @@ class SmartCharger:
         config_entry: ConfigEntry | None = entry_data.get("config_entry")
 
         if not config_entry:
+            _LOGGER.debug("Charger %s: no config_entry in hass.data", entry_id)
             return False
 
         soc_entity = config_entry.options.get(CONF_VEHICLE_SOC_ENTITY)
         battery = config_entry.options.get(CONF_BATTERY_CAPACITY)
         departure = config_entry.options.get(CONF_DEPARTURE_TIME)
 
-        return bool(soc_entity and battery and departure)
+        is_ready = bool(soc_entity and battery and departure)
+        _LOGGER.debug(
+            "Charger %s AI ready check: soc=%s, battery=%s, departure=%s -> %s",
+            entry_id, soc_entity, battery, departure, is_ready
+        )
+
+        return is_ready
 
     def _build_charger_requirement(self, entry_id: str) -> ChargerRequirement | None:
         """Build a ChargerRequirement from charger config and state."""
