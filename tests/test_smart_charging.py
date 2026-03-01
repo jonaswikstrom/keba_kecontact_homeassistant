@@ -9,6 +9,7 @@ from custom_components.keba_kecontact.anthropic_client import (
     ChargingPlan,
     ChargerRequirement,
     ValidationResult,
+    PriceSlot,
 )
 from custom_components.keba_kecontact.charging_history import (
     ChargingSession,
@@ -20,6 +21,7 @@ class TestChargingSlot:
     def test_to_dict(self):
         slot = ChargingSlot(
             hour=14,
+            minute=30,
             date="2024-01-15",
             current_amps=16,
             expected_soc_after=75.5,
@@ -31,6 +33,7 @@ class TestChargingSlot:
 
         assert result == {
             "hour": 14,
+            "minute": 30,
             "date": "2024-01-15",
             "current_amps": 16,
             "expected_soc_after": 75.5,
@@ -39,6 +42,27 @@ class TestChargingSlot:
         }
 
     def test_from_dict(self):
+        data = {
+            "hour": 14,
+            "minute": 15,
+            "date": "2024-01-15",
+            "current_amps": 16,
+            "soc_after": 75.5,
+            "price": 0.45,
+            "cost": 1.23,
+        }
+
+        slot = ChargingSlot.from_dict(data)
+
+        assert slot.hour == 14
+        assert slot.minute == 15
+        assert slot.date == "2024-01-15"
+        assert slot.current_amps == 16
+        assert slot.expected_soc_after == 75.5
+        assert slot.price == 0.45
+        assert slot.cost == 1.23
+
+    def test_from_dict_without_minute_defaults_to_zero(self):
         data = {
             "hour": 14,
             "date": "2024-01-15",
@@ -50,16 +74,12 @@ class TestChargingSlot:
 
         slot = ChargingSlot.from_dict(data)
 
-        assert slot.hour == 14
-        assert slot.date == "2024-01-15"
-        assert slot.current_amps == 16
-        assert slot.expected_soc_after == 75.5
-        assert slot.price == 0.45
-        assert slot.cost == 1.23
+        assert slot.minute == 0
 
     def test_from_dict_with_expected_soc_after(self):
         data = {
             "hour": 14,
+            "minute": 0,
             "date": "2024-01-15",
             "current_amps": 16,
             "expected_soc_after": 80.0,
@@ -73,10 +93,10 @@ class TestChargingSlot:
 
 
 class TestChargingPlan:
-    def test_get_slot_for_hour_found(self):
+    def test_get_slot_for_time_found_hourly(self):
         slots = [
-            ChargingSlot(hour=14, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
-            ChargingSlot(hour=15, date="2024-01-15", current_amps=20, expected_soc_after=65, price=0.4, cost=1.5),
+            ChargingSlot(hour=14, minute=0, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
+            ChargingSlot(hour=15, minute=0, date="2024-01-15", current_amps=20, expected_soc_after=65, price=0.4, cost=1.5),
         ]
         plan = ChargingPlan(
             charger_id="test_charger",
@@ -85,14 +105,17 @@ class TestChargingPlan:
             slots=slots,
         )
 
-        result = plan.get_slot_for_hour(15, "2024-01-15")
+        result = plan.get_slot_for_time(15, 30, "2024-01-15")
 
         assert result is not None
         assert result.current_amps == 20
 
-    def test_get_slot_for_hour_not_found(self):
+    def test_get_slot_for_time_found_15min(self):
         slots = [
-            ChargingSlot(hour=14, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
+            ChargingSlot(hour=14, minute=0, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
+            ChargingSlot(hour=14, minute=15, date="2024-01-15", current_amps=20, expected_soc_after=55, price=0.35, cost=1.2),
+            ChargingSlot(hour=14, minute=30, date="2024-01-15", current_amps=24, expected_soc_after=60, price=0.4, cost=1.4),
+            ChargingSlot(hour=14, minute=45, date="2024-01-15", current_amps=28, expected_soc_after=65, price=0.45, cost=1.6),
         ]
         plan = ChargingPlan(
             charger_id="test_charger",
@@ -101,13 +124,30 @@ class TestChargingPlan:
             slots=slots,
         )
 
-        result = plan.get_slot_for_hour(20, "2024-01-15")
+        result = plan.get_slot_for_time(14, 32, "2024-01-15")
+
+        assert result is not None
+        assert result.minute == 30
+        assert result.current_amps == 24
+
+    def test_get_slot_for_time_not_found(self):
+        slots = [
+            ChargingSlot(hour=14, minute=0, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
+        ]
+        plan = ChargingPlan(
+            charger_id="test_charger",
+            created_at=datetime.now(),
+            departure_time=datetime.now() + timedelta(hours=10),
+            slots=slots,
+        )
+
+        result = plan.get_slot_for_time(20, 0, "2024-01-15")
 
         assert result is None
 
-    def test_get_slot_for_hour_wrong_date(self):
+    def test_get_slot_for_time_wrong_date(self):
         slots = [
-            ChargingSlot(hour=14, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
+            ChargingSlot(hour=14, minute=0, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
         ]
         plan = ChargingPlan(
             charger_id="test_charger",
@@ -116,7 +156,7 @@ class TestChargingPlan:
             slots=slots,
         )
 
-        result = plan.get_slot_for_hour(14, "2024-01-16")
+        result = plan.get_slot_for_time(14, 0, "2024-01-16")
 
         assert result is None
 
@@ -124,7 +164,7 @@ class TestChargingPlan:
         now = datetime(2024, 1, 15, 10, 0, 0)
         departure = datetime(2024, 1, 16, 7, 0, 0)
         slots = [
-            ChargingSlot(hour=14, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
+            ChargingSlot(hour=14, minute=30, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
         ]
         original = ChargingPlan(
             charger_id="test_charger",
@@ -146,26 +186,11 @@ class TestChargingPlan:
         assert restored.reasoning == original.reasoning
         assert restored.status == original.status
         assert len(restored.slots) == len(original.slots)
+        assert restored.slots[0].minute == 30
 
 
 class TestPriceExtraction:
-    def test_extract_prices_from_dict_list(self):
-        from custom_components.keba_kecontact.smart_charger import SmartCharger
-
-        price_list = [
-            {"hour": 2, "price": 0.26},
-            {"hour": 0, "price": 0.32},
-            {"hour": 1, "price": 0.29},
-        ]
-
-        mock_hass = MagicMock()
-        charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
-
-        result = charger._extract_prices_from_list(price_list)
-
-        assert result == [0.32, 0.29, 0.26]
-
-    def test_extract_prices_from_flat_list(self):
+    def test_extract_prices_to_slots_hourly(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
 
         price_list = [0.32, 0.29, 0.26]
@@ -173,21 +198,43 @@ class TestPriceExtraction:
         mock_hass = MagicMock()
         charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
 
-        result = charger._extract_prices_from_list(price_list)
+        result = charger._extract_prices_to_slots(price_list, "2024-01-15")
 
-        assert result == [0.32, 0.29, 0.26]
+        assert len(result) == 3
+        assert result[0].hour == 0
+        assert result[0].minute == 0
+        assert result[0].price == pytest.approx(0.32)
+        assert result[0].date == "2024-01-15"
 
-    def test_extract_prices_from_empty_list(self):
+    def test_extract_prices_to_slots_15min(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        price_list = [0.30 + i * 0.01 for i in range(96)]
+
+        mock_hass = MagicMock()
+        charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
+
+        result = charger._extract_prices_to_slots(price_list, "2024-01-15")
+
+        assert len(result) == 96
+        assert result[0].hour == 0
+        assert result[0].minute == 0
+        assert result[1].hour == 0
+        assert result[1].minute == 15
+        assert result[4].hour == 1
+        assert result[4].minute == 0
+
+    def test_extract_prices_to_slots_empty_list(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
 
         mock_hass = MagicMock()
         charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
 
-        result = charger._extract_prices_from_list([])
+        result = charger._extract_prices_to_slots([], "2024-01-15")
 
         assert result == []
 
-    def test_extract_prices_full_day(self):
+    def test_extract_prices_to_slots_full_day_hourly(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
 
         price_list = [{"hour": h, "price": 0.20 + h * 0.01} for h in range(24)]
@@ -195,11 +242,15 @@ class TestPriceExtraction:
         mock_hass = MagicMock()
         charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 32)
 
-        result = charger._extract_prices_from_list(price_list)
+        result = charger._extract_prices_to_slots(price_list, "2024-01-15")
 
         assert len(result) == 24
-        assert result[0] == pytest.approx(0.20)
-        assert result[23] == pytest.approx(0.43)
+        assert result[0].price == pytest.approx(0.20)
+        assert result[0].hour == 0
+        assert result[0].minute == 0
+        assert result[23].price == pytest.approx(0.43)
+        assert result[23].hour == 23
+        assert result[23].minute == 0
 
 
 class TestAnthropicClientParsing:
@@ -333,7 +384,7 @@ class TestAnthropicClientApiCall:
                             {
                                 "charger_id": "charger_1",
                                 "slots": [
-                                    {"hour": 2, "date": "2024-01-16", "current_amps": 16, "soc_after": 100, "price": 0.25, "cost": 0.80},
+                                    {"hour": 2, "minute": 0, "date": "2024-01-16", "current_amps": 16, "soc_after": 100, "price": 0.25, "cost": 0.80},
                                 ],
                                 "total_cost": 0.80,
                             }
@@ -344,14 +395,17 @@ class TestAnthropicClientApiCall:
             ]
         }
 
+        today_prices = [PriceSlot(hour=h, minute=0, price=0.30, date="2024-01-15") for h in range(24)]
+        tomorrow_prices = [PriceSlot(hour=h, minute=0, price=0.25, date="2024-01-16") for h in range(24)]
+
         with patch.object(planner, "_call_api", new_callable=AsyncMock) as mock_call:
             mock_call.return_value = mock_response
 
             plans = await planner.create_plan(
                 chargers=chargers,
                 total_max_current_a=32,
-                today_prices=[0.30] * 24,
-                tomorrow_prices=[0.25] * 24,
+                today_prices=today_prices,
+                tomorrow_prices=tomorrow_prices,
             )
 
             mock_call.assert_called_once()
@@ -380,13 +434,16 @@ class TestAnthropicClientApiCall:
             ]
         }
 
+        today_prices = [PriceSlot(hour=h, minute=0, price=0.30, date="2024-01-15") for h in range(24)]
+        tomorrow_prices = [PriceSlot(hour=h, minute=0, price=0.25, date="2024-01-16") for h in range(24)]
+
         with patch.object(planner, "_call_api", new_callable=AsyncMock) as mock_call:
             mock_call.return_value = mock_response
 
             result = await planner.validate_plan(
                 current_plans=plans,
-                new_prices_today=[0.30] * 24,
-                new_prices_tomorrow=[0.25] * 24,
+                new_prices_today=today_prices,
+                new_prices_tomorrow=tomorrow_prices,
             )
 
             mock_call.assert_called_once()
@@ -544,7 +601,7 @@ class TestSmartChargerDepartureTime:
 
 
 class TestSmartChargerNordpoolReading:
-    def test_get_nordpool_prices_with_dict_format(self):
+    def test_get_nordpool_prices_returns_price_slots(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
 
         mock_hass = MagicMock()
@@ -567,8 +624,12 @@ class TestSmartChargerNordpoolReading:
 
         today, tomorrow = charger._get_nordpool_prices()
 
-        assert today == [0.30, 0.28, 0.25]
-        assert tomorrow == [0.22, 0.20]
+        assert len(today) == 3
+        assert today[0].price == pytest.approx(0.30)
+        assert today[0].hour == 0
+        assert today[0].minute == 0
+        assert len(tomorrow) == 2
+        assert tomorrow[0].price == pytest.approx(0.22)
 
     def test_get_nordpool_prices_tomorrow_not_available(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
@@ -586,7 +647,8 @@ class TestSmartChargerNordpoolReading:
 
         today, tomorrow = charger._get_nordpool_prices()
 
-        assert today == [0.30]
+        assert len(today) == 1
+        assert today[0].price == pytest.approx(0.30)
         assert tomorrow is None
 
     def test_get_nordpool_prices_entity_not_found(self):
@@ -601,6 +663,7 @@ class TestSmartChargerNordpoolReading:
 
         assert today == []
         assert tomorrow is None
+        assert charger.last_error is not None
 
     def test_get_nordpool_prices_converts_mwh_to_kwh(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
@@ -618,7 +681,7 @@ class TestSmartChargerNordpoolReading:
 
         today, _ = charger._get_nordpool_prices()
 
-        assert today[0] == pytest.approx(0.30)
+        assert today[0].price == pytest.approx(0.30)
 
     def test_get_nordpool_prices_converts_ore_to_sek(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
@@ -636,7 +699,32 @@ class TestSmartChargerNordpoolReading:
 
         today, _ = charger._get_nordpool_prices()
 
-        assert today[0] == pytest.approx(1.50)
+        assert today[0].price == pytest.approx(1.50)
+
+    def test_get_nordpool_prices_96_slots_15min(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+
+        mock_hass = MagicMock()
+        mock_state = MagicMock()
+        mock_state.attributes = {
+            "prices_today": [0.30 + i * 0.001 for i in range(96)],
+            "tomorrow_available": False,
+        }
+        mock_hass.states.get.return_value = mock_state
+
+        charger = SmartCharger(mock_hass, "api_key", "sensor.electricity_price", [], 32)
+
+        today, _ = charger._get_nordpool_prices()
+
+        assert len(today) == 96
+        assert today[0].hour == 0
+        assert today[0].minute == 0
+        assert today[1].hour == 0
+        assert today[1].minute == 15
+        assert today[4].hour == 1
+        assert today[4].minute == 0
+        assert today[95].hour == 23
+        assert today[95].minute == 45
 
 
 class TestSocNormalization:

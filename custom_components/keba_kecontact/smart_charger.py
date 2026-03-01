@@ -16,6 +16,7 @@ from .anthropic_client import (
     AnthropicChargingPlanner,
     ChargingPlan,
     ChargerRequirement,
+    PriceSlot,
 )
 from .charging_history import ChargingHistoryTracker
 from .const import (
@@ -64,6 +65,16 @@ class SmartCharger:
         self._last_tomorrow_valid: bool | None = None
         self._planning_in_progress = False
         self._last_progress_check: dict[str, float] = {}
+        self._last_error: str | None = None
+
+    @property
+    def last_error(self) -> str | None:
+        """Return the last error message, if any."""
+        return self._last_error
+
+    def clear_error(self) -> None:
+        """Clear the last error."""
+        self._last_error = None
 
     @property
     def active_plans(self) -> dict[str, ChargingPlan]:
@@ -281,12 +292,14 @@ class SmartCharger:
 
         if not requirements:
             _LOGGER.debug("No valid charger requirements, skipping planning")
+            self._last_error = "No valid charger requirements (check SoC entity, battery capacity, departure time)"
             return
 
         today_prices, tomorrow_prices = self._get_nordpool_prices()
 
         if not today_prices:
             _LOGGER.warning("No Nordpool prices available, cannot create plan")
+            self._last_error = "No Nordpool prices available"
             return
 
         try:
@@ -297,6 +310,7 @@ class SmartCharger:
                 tomorrow_prices=tomorrow_prices,
             )
 
+            self._last_error = None
             for plan in plans:
                 self._active_plans[plan.charger_id] = plan
                 _LOGGER.info(
@@ -309,6 +323,7 @@ class SmartCharger:
 
         except Exception as err:
             _LOGGER.error("AI planning failed: %s", err, exc_info=True)
+            self._last_error = f"AI planning failed: {err}"
 
     async def _check_charging_progress(self, now: datetime) -> None:
         """Check if actual charging progress matches the plan, replan if needed."""
@@ -327,8 +342,9 @@ class SmartCharger:
                 continue
 
             current_hour = now.hour
+            current_minute = now.minute
             current_date = now.date().isoformat()
-            slot = plan.get_slot_for_hour(current_hour, current_date)
+            slot = plan.get_slot_for_time(current_hour, current_minute, current_date)
 
             if slot and slot.expected_soc_after > 0:
                 expected_soc = slot.expected_soc_after
@@ -417,8 +433,9 @@ class SmartCharger:
             _LOGGER.error("Plan validation failed: %s", err)
 
     async def _execute_plans(self, now: datetime) -> None:
-        """Execute charging plans - apply current hour's settings."""
+        """Execute charging plans - apply current time slot's settings."""
         current_hour = now.hour
+        current_minute = now.minute
         current_date = now.date().isoformat()
 
         for entry_id, plan in list(self._active_plans.items()):
@@ -428,7 +445,7 @@ class SmartCharger:
                 await self._restore_charger_to_normal(entry_id)
                 continue
 
-            slot = plan.get_slot_for_hour(current_hour, current_date)
+            slot = plan.get_slot_for_time(current_hour, current_minute, current_date)
 
             if slot:
                 await self._apply_slot(entry_id, slot)
@@ -576,23 +593,30 @@ class SmartCharger:
         except Exception:
             return now.replace(hour=7, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
-    def _get_nordpool_prices(self) -> tuple[list[float], list[float] | None]:
+    def _get_nordpool_prices(self) -> tuple[list[PriceSlot], list[PriceSlot] | None]:
         """Get today's and tomorrow's prices from electricity price entity."""
         state = self.hass.states.get(self._nordpool_entity_id)
 
         if not state:
+            self._last_error = f"Nordpool entity '{self._nordpool_entity_id}' not found"
             return [], None
 
         unit = state.attributes.get("unit_of_measurement", "")
         multiplier = self._get_price_multiplier(unit)
 
         today_raw = state.attributes.get("prices_today", [])
-        today = self._extract_prices_from_list(today_raw, multiplier)
+        today_date = datetime.now().date().isoformat()
+        today = self._extract_prices_to_slots(today_raw, today_date, multiplier)
+
+        if not today:
+            self._last_error = f"No prices_today in '{self._nordpool_entity_id}'"
+            return [], None
 
         tomorrow = None
         if state.attributes.get("tomorrow_available"):
             tomorrow_raw = state.attributes.get("prices_tomorrow", [])
-            tomorrow = self._extract_prices_from_list(tomorrow_raw, multiplier)
+            tomorrow_date = (datetime.now().date() + timedelta(days=1)).isoformat()
+            tomorrow = self._extract_prices_to_slots(tomorrow_raw, tomorrow_date, multiplier)
 
         return today, tomorrow
 
@@ -605,18 +629,39 @@ class SmartCharger:
             return 0.01
         return 1.0
 
-    def _extract_prices_from_list(
-        self, price_list: list, multiplier: float = 1.0
-    ) -> list[float]:
-        """Extract price values from list of dicts, sorted by hour."""
+    def _extract_prices_to_slots(
+        self, price_list: list, date: str, multiplier: float = 1.0
+    ) -> list[PriceSlot]:
+        """Extract price values from list and convert to PriceSlot objects."""
         if not price_list:
             return []
 
+        slots_count = len(price_list)
+        minutes_per_slot = (24 * 60) // slots_count
+
         if isinstance(price_list[0], dict):
             sorted_prices = sorted(price_list, key=lambda x: x.get("hour", 0))
-            return [item.get("price", 0.0) * multiplier for item in sorted_prices]
+            slots = []
+            for i, item in enumerate(sorted_prices):
+                total_minutes = i * minutes_per_slot
+                slots.append(PriceSlot(
+                    hour=total_minutes // 60,
+                    minute=total_minutes % 60,
+                    price=item.get("price", 0.0) * multiplier,
+                    date=date,
+                ))
+            return slots
 
-        return [p * multiplier for p in price_list]
+        slots = []
+        for i, price in enumerate(price_list):
+            total_minutes = i * minutes_per_slot
+            slots.append(PriceSlot(
+                hour=total_minutes // 60,
+                minute=total_minutes % 60,
+                price=price * multiplier,
+                date=date,
+            ))
+        return slots
 
     def _get_state_entity_id(self, entry_id: str) -> str | None:
         """Get the state entity ID for a charger entry."""

@@ -78,6 +78,9 @@ class SmartChargingStatusSensor(RestoreEntity, SensorEntity):
         if not self._coordinator.smart_charger:
             return "disabled"
 
+        if self._coordinator.smart_charger.last_error:
+            return "error"
+
         if self._coordinator.smart_charger.active_plans:
             return "active"
 
@@ -89,11 +92,17 @@ class SmartChargingStatusSensor(RestoreEntity, SensorEntity):
         if not self._coordinator.smart_charger:
             return {}
 
-        plans = self._coordinator.smart_charger.active_plans
-        return {
+        smart_charger = self._coordinator.smart_charger
+        plans = smart_charger.active_plans
+        attrs = {
             "active_plans": len(plans),
             "chargers_with_plans": list(plans.keys()),
         }
+
+        if smart_charger.last_error:
+            attrs["error"] = smart_charger.last_error
+
+        return attrs
 
 
 class SmartChargingCostSensor(SensorEntity):
@@ -198,7 +207,7 @@ class SmartChargingNextWindowSensor(SensorEntity):
             return None
 
         now = datetime.now()
-        current_hour = now.hour
+        current_minutes = now.hour * 60 + now.minute
         current_date = now.date().isoformat()
 
         next_windows = []
@@ -208,23 +217,28 @@ class SmartChargingNextWindowSensor(SensorEntity):
                 slot for slot in plan.slots
                 if slot.current_amps > 0 and (
                     slot.date > current_date or
-                    (slot.date == current_date and slot.hour >= current_hour)
+                    (slot.date == current_date and (slot.hour * 60 + slot.minute) >= current_minutes)
                 )
             ]
 
             if upcoming_slots:
-                upcoming_slots.sort(key=lambda s: (s.date, s.hour))
+                upcoming_slots.sort(key=lambda s: (s.date, s.hour, s.minute))
 
-                window_start = upcoming_slots[0].hour
-                window_end = window_start
+                first_slot = upcoming_slots[0]
+                window_start = f"{first_slot.hour:02d}:{first_slot.minute:02d}"
+                last_slot = first_slot
 
-                for i, slot in enumerate(upcoming_slots[1:], 1):
-                    if slot.hour == window_end + 1 and slot.date == upcoming_slots[i-1].date:
-                        window_end = slot.hour
+                for slot in upcoming_slots[1:]:
+                    if slot.date == last_slot.date:
+                        last_slot = slot
                     else:
                         break
 
-                next_windows.append(f"{window_start:02d}:00-{window_end+1:02d}:00")
+                slot_duration = plan._get_minutes_per_slot()
+                end_minutes = last_slot.hour * 60 + last_slot.minute + slot_duration
+                window_end = f"{end_minutes // 60:02d}:{end_minutes % 60:02d}"
+
+                next_windows.append(f"{window_start}-{window_end}")
 
         if next_windows:
             return ", ".join(next_windows[:2])
