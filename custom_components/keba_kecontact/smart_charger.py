@@ -114,7 +114,7 @@ class SmartCharger:
 
     async def _check_already_connected_cars(self) -> None:
         """Check for cars that are already connected at startup."""
-        connected = self._get_all_connected_chargers()
+        connected = self._get_connected_chargers()
         if connected:
             _LOGGER.info(
                 "Found %d already connected charger(s) at startup: %s",
