@@ -211,9 +211,9 @@ class Report3:
 
     @property
     def power_kw(self) -> Optional[float]:
-        """Get power in kW."""
+        """Get power in kW (raw value is in mW)."""
         if self.p is not None:
-            return self.p / 1000.0
+            return self.p / 1000000.0
         return None
 
     @property
