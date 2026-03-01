@@ -4,11 +4,45 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, time
+from pathlib import Path
 from typing import Any
 
 import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
+_FILE_LOG: logging.Logger | None = None
+
+
+def _get_file_logger() -> logging.Logger | None:
+    global _FILE_LOG
+    if _FILE_LOG is not None:
+        return _FILE_LOG
+    file_logger = logging.getLogger("keba_anthropic_file")
+    if file_logger.handlers:
+        _FILE_LOG = file_logger
+        return file_logger
+    file_logger.setLevel(logging.DEBUG)
+    try:
+        log_path = Path("/config/keba_smart_charging.log")
+        if not log_path.parent.exists():
+            log_path = Path.home() / "keba_smart_charging.log"
+        handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s [API] %(levelname)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S"
+        ))
+        file_logger.addHandler(handler)
+        _FILE_LOG = file_logger
+        return file_logger
+    except Exception:
+        return None
+
+
+def _log_info(msg: str, *args) -> None:
+    _LOGGER.info(msg, *args)
+    fl = _get_file_logger()
+    if fl:
+        fl.info(msg, *args)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL_SONNET = "claude-sonnet-4-20250514"
@@ -432,12 +466,12 @@ class AnthropicChargingPlanner:
         current_time: datetime,
     ) -> list[ChargingPlan]:
         """Parse the API response into ChargingPlan objects."""
-        _LOGGER.debug("API response: %s", response)
-
         content_list = response.get("content", [])
-        _LOGGER.info("Response has %d content blocks", len(content_list))
+        _log_info("API response has %d content blocks", len(content_list))
         for i, c in enumerate(content_list):
-            _LOGGER.info("Content[%d] type=%s, name=%s", i, c.get("type"), c.get("name", "N/A"))
+            _log_info("Content[%d] type=%s, name=%s", i, c.get("type"), c.get("name", "N/A"))
+            if c.get("type") == "text":
+                _log_info("Content[%d] text: %s", i, c.get("text", "")[:500])
 
         plans = []
 
