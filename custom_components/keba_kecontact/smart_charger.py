@@ -157,9 +157,6 @@ class SmartCharger:
         else:
             _LOGGER.info("No AI-ready connected chargers found at startup")
 
-        for line in debug_lines:
-            _LOGGER.debug(line)
-
     async def async_stop(self) -> None:
         """Stop the smart charger."""
         if self._unsub_nordpool:
