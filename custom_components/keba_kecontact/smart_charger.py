@@ -215,9 +215,20 @@ class SmartCharger:
         _log_info("Connected chargers found: %s", connected)
 
         if connected:
-            _log_info("Found %d already connected charger(s)", len(connected))
+            _log_info("Found %d already connected charger(s), creating single batch plan", len(connected))
             for entry_id in connected:
-                await self._on_car_connected(entry_id)
+                soc_entity = self._get_charger_soc_entity(entry_id)
+                if soc_entity:
+                    current_soc = self._get_soc_normalized(soc_entity)
+                    session_energy = self._get_charger_session_energy(entry_id)
+                    if current_soc is not None:
+                        self._history_tracker.start_session(
+                            entry_id,
+                            soc_entity,
+                            current_soc,
+                            session_energy or 0,
+                        )
+            await self._create_plans_for_chargers(connected)
         else:
             _log_info("No AI-ready connected chargers found at startup")
 

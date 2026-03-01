@@ -276,8 +276,11 @@ class AnthropicChargingPlanner:
         today_prices: list[PriceSlot],
         tomorrow_prices: list[PriceSlot] | None,
         current_time: datetime | None = None,
+        max_retries: int = 3,
     ) -> list[ChargingPlan]:
         """Create optimal charging plans for all chargers using Sonnet."""
+        import asyncio
+
         if current_time is None:
             current_time = datetime.now()
 
@@ -285,13 +288,38 @@ class AnthropicChargingPlanner:
             chargers, total_max_current_a, today_prices, tomorrow_prices, current_time
         )
 
-        response = await self._call_api(
-            model=MODEL_SONNET,
-            prompt=prompt,
-            tools=[CREATE_PLAN_TOOL],
-        )
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = await self._call_api(
+                    model=MODEL_SONNET,
+                    prompt=prompt,
+                    tools=[CREATE_PLAN_TOOL],
+                )
 
-        return self._parse_create_response(chargers, response, current_time)
+                plans = self._parse_create_response(chargers, response, current_time)
+                if plans:
+                    return plans
+
+            except ValueError as e:
+                last_error = e
+                if "No valid plans" in str(e) and attempt < max_retries - 1:
+                    _log_info("Retry %d/%d: Empty API response, waiting 2s before retry...",
+                        attempt + 1, max_retries)
+                    await asyncio.sleep(2)
+                    continue
+                raise
+
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    _log_info("Retry %d/%d: API error '%s', waiting 2s before retry...",
+                        attempt + 1, max_retries, str(e)[:100])
+                    await asyncio.sleep(2)
+                    continue
+                raise
+
+        raise last_error or ValueError("Failed to create plans after retries")
 
     async def validate_plan(
         self,
