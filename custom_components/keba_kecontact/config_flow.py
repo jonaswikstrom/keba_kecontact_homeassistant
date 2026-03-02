@@ -32,9 +32,12 @@ from .const import (
     CONF_ANTHROPIC_API_KEY,
     CONF_NORDPOOL_ENTITY,
     CONF_VEHICLE_SOC_ENTITY,
+    CONF_VEHICLE_CHARGING_STATUS_ENTITY,
     CONF_BATTERY_CAPACITY,
     CONF_DEPARTURE_TIME,
+    CONF_TARGET_SOC,
     DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_TARGET_SOC,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -189,14 +192,13 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        options = self.config_entry.options
+
         options_schema = vol.Schema(
             {
                 vol.Optional(
                     CONF_RFID,
-                    default=self.config_entry.options.get(
-                        CONF_RFID,
-                        self.config_entry.data.get(CONF_RFID, "")
-                    ),
+                    description={"suggested_value": options.get(CONF_RFID, "")},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.TEXT,
@@ -204,10 +206,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_RFID_CLASS,
-                    default=self.config_entry.options.get(
-                        CONF_RFID_CLASS,
-                        self.config_entry.data.get(CONF_RFID_CLASS, "")
-                    ),
+                    description={"suggested_value": options.get(CONF_RFID_CLASS, "")},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.TEXT,
@@ -215,14 +214,19 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_VEHICLE_SOC_ENTITY,
+                    description={"suggested_value": options.get(CONF_VEHICLE_SOC_ENTITY)},
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor"),
+                ),
+                vol.Optional(
+                    CONF_VEHICLE_CHARGING_STATUS_ENTITY,
+                    description={"suggested_value": options.get(CONF_VEHICLE_CHARGING_STATUS_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),
                 vol.Optional(
                     CONF_BATTERY_CAPACITY,
-                    default=self.config_entry.options.get(
-                        CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY_KWH
-                    ),
+                    description={"suggested_value": options.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY_KWH)},
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=10,
@@ -233,7 +237,20 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                     ),
                 ),
                 vol.Optional(
+                    CONF_TARGET_SOC,
+                    description={"suggested_value": options.get(CONF_TARGET_SOC, DEFAULT_TARGET_SOC)},
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=20,
+                        max=100,
+                        step=5,
+                        unit_of_measurement="%",
+                        mode=selector.NumberSelectorMode.BOX,
+                    ),
+                ),
+                vol.Optional(
                     CONF_DEPARTURE_TIME,
+                    description={"suggested_value": options.get(CONF_DEPARTURE_TIME)},
                 ): selector.TimeSelector(
                     selector.TimeSelectorConfig(),
                 ),
@@ -249,11 +266,13 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
+        options = self.config_entry.options
+
         options_schema = vol.Schema(
             {
                 vol.Optional(
                     CONF_ANTHROPIC_API_KEY,
-                    default=self.config_entry.options.get(CONF_ANTHROPIC_API_KEY, ""),
+                    description={"suggested_value": options.get(CONF_ANTHROPIC_API_KEY, "")},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(
                         type=selector.TextSelectorType.PASSWORD,
@@ -261,6 +280,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_NORDPOOL_ENTITY,
+                    description={"suggested_value": options.get(CONF_NORDPOOL_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),

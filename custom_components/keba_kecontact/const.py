@@ -19,11 +19,14 @@ COORDINATOR_STRATEGY_SMART = "smart"
 CONF_ANTHROPIC_API_KEY = "anthropic_api_key"
 CONF_NORDPOOL_ENTITY = "nordpool_entity"
 CONF_VEHICLE_SOC_ENTITY = "vehicle_soc_entity"
+CONF_VEHICLE_CHARGING_STATUS_ENTITY = "vehicle_charging_status_entity"
 CONF_BATTERY_CAPACITY = "battery_capacity_kwh"
 CONF_DEPARTURE_TIME = "departure_time"
+CONF_TARGET_SOC = "target_soc"
 
 MIN_CHARGING_CURRENT_A = 6
 DEFAULT_BATTERY_CAPACITY_KWH = 60
+DEFAULT_TARGET_SOC = 100
 
 PRIORITY_LOW = "low"
 PRIORITY_NORMAL = "normal"

@@ -165,6 +165,7 @@ class ChargerRequirement:
     battery_capacity_kwh: float
     departure_time: datetime
     max_current_a: int
+    target_soc: float = 100.0
     historical_charging_rate_kw: float | None = None
 
 
@@ -192,7 +193,7 @@ CONSTRAINTS (MUST be satisfied):
 1. TOTAL MAX CURRENT: Sum of all chargers' current ≤ total_max_current_a at any time slot
 2. MIN CURRENT PER CHARGER: Each charger gets either 0A (paused) OR ≥6A. Never 1-5A.
 3. MAX CURRENT PER CHARGER: Respect each charger's individual max_current_a limit
-4. DEPARTURE TIME: Each vehicle must reach near 100% SoC by its departure time
+4. DEPARTURE TIME: Each vehicle must reach its target SoC by its departure time. ONLY schedule charging slots BEFORE the departure time.
 
 CHARGING CALCULATIONS:
 - Three-phase charging: Power (kW) = Current (A) × 230V × 3 × 0.95 / 1000
@@ -403,7 +404,7 @@ class AnthropicChargingPlanner:
                 f"{i}. {c.charger_name} (ID: {c.charger_id})"
             )
             lines.append(
-                f"   - Current SoC: {c.current_soc:.0f}%, Battery: {c.battery_capacity_kwh} kWh"
+                f"   - Current SoC: {c.current_soc:.0f}%, Target SoC: {c.target_soc:.0f}%, Battery: {c.battery_capacity_kwh} kWh"
             )
             lines.append(
                 f"   - Departure: {c.departure_time.strftime('%Y-%m-%d %H:%M')}, Max current: {c.max_current_a}A{rate_info}"

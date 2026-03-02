@@ -26,10 +26,13 @@ from .charging_history import ChargingHistoryTracker
 from .const import (
     DOMAIN,
     CONF_VEHICLE_SOC_ENTITY,
+    CONF_VEHICLE_CHARGING_STATUS_ENTITY,
     CONF_BATTERY_CAPACITY,
     CONF_DEPARTURE_TIME,
+    CONF_TARGET_SOC,
     MIN_CHARGING_CURRENT_A,
     DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_TARGET_SOC,
 )
 
 if TYPE_CHECKING:
@@ -120,12 +123,14 @@ class SmartCharger:
         self._unsub_interval: callable | None = None
         self._unsub_progress_check: callable | None = None
         self._unsub_charger_states: list[callable] = []
+        self._unsub_vehicle_status: list[callable] = []
         self._unsub_start_event: callable | None = None
 
         self._last_tomorrow_valid: bool | None = None
         self._planning_in_progress = False
         self._last_progress_check: dict[str, float] = {}
         self._last_error: str | None = None
+        self._last_applied_slot: dict[str, tuple[int, str]] = {}
 
     @property
     def last_error(self) -> str | None:
@@ -181,6 +186,17 @@ class SmartCharger:
                     self._handle_charger_state_change,
                 )
                 self._unsub_charger_states.append(unsub)
+
+            vehicle_status_entity = self._get_vehicle_charging_status_entity(entry_id)
+            if vehicle_status_entity:
+                unsub = async_track_state_change_event(
+                    self.hass,
+                    [vehicle_status_entity],
+                    self._handle_vehicle_status_change,
+                )
+                self._unsub_vehicle_status.append(unsub)
+                _log_info("Listening to vehicle charging status: %s for charger %s",
+                    vehicle_status_entity, entry_id)
 
         _log_info("Smart charger started with %d chargers, max current %dA",
             len(self._charger_entry_ids), self._max_current)
@@ -251,6 +267,8 @@ class SmartCharger:
             self._unsub_progress_check()
         for unsub in self._unsub_charger_states:
             unsub()
+        for unsub in self._unsub_vehicle_status:
+            unsub()
 
         _LOGGER.info("Smart charger stopped")
 
@@ -292,6 +310,27 @@ class SmartCharger:
         elif old_value in ("Ready for charging", "Charging") and new_value == "Not ready for charging":
             _LOGGER.info("Car disconnected from charger %s", entry_id)
             self.hass.async_create_task(self._on_car_disconnected(entry_id))
+
+    CHARGING_DONE_STATES = {"done", "idle", "completed", "full", "finished", "not_charging"}
+
+    @callback
+    def _handle_vehicle_status_change(self, event: Event) -> None:
+        """Handle vehicle charging status changes (for detecting charging completion)."""
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+
+        if not new_state or not old_state:
+            return
+
+        new_lower = new_state.state.lower()
+        old_lower = old_state.state.lower()
+
+        if new_lower in self.CHARGING_DONE_STATES and old_lower not in self.CHARGING_DONE_STATES:
+            entity_id = event.data.get("entity_id")
+            entry_id = self._find_entry_for_vehicle_status_entity(entity_id)
+            if entry_id and entry_id in self._active_plans:
+                self._active_plans[entry_id].status = "completed"
+                _log_info("Charger %s: Vehicle reports charging done (state: %s)", entry_id, new_state.state)
 
     async def _on_car_connected(self, triggered_entry_id: str) -> None:
         """Handle car connection - create plans for ALL connected cars."""
@@ -533,21 +572,27 @@ class SmartCharger:
             _LOGGER.warning("No client found for charger %s", entry_id)
             return
 
+        slot_key = f"{slot.date}_{slot.hour:02d}:{slot.minute:02d}"
+        last = self._last_applied_slot.get(entry_id)
+        is_change = last is None or last != (slot.current_amps, slot_key)
+
         try:
             current_ma = slot.current_amps * 1000
 
             if current_ma == 0:
                 await client.disable()
-                _LOGGER.debug("Paused charging on %s", entry_id)
+                if is_change:
+                    _log_info("Charger %s: Paused (slot %s, price %.4f SEK)",
+                        entry_id, slot_key, slot.price)
             else:
                 await client.enable()
                 await client.set_current(current_ma)
-                _LOGGER.debug(
-                    "Set %s to %dA (price: %.4f)",
-                    entry_id,
-                    slot.current_amps,
-                    slot.price,
-                )
+                if is_change:
+                    _log_info("Charger %s: %dA @ %.4f SEK (SoC→%.0f%%)",
+                        entry_id, slot.current_amps, slot.price, slot.expected_soc_after)
+
+            if is_change:
+                self._last_applied_slot[entry_id] = (slot.current_amps, slot_key)
 
         except Exception as err:
             _LOGGER.error("Failed to apply slot to %s: %s", entry_id, err)
@@ -620,6 +665,7 @@ class SmartCharger:
             CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY_KWH
         )
         departure_time_str = config_entry.options.get(CONF_DEPARTURE_TIME, "07:00:00")
+        target_soc = config_entry.options.get(CONF_TARGET_SOC, DEFAULT_TARGET_SOC)
 
         if not soc_entity:
             return None
@@ -648,6 +694,7 @@ class SmartCharger:
             battery_capacity_kwh=battery_capacity,
             departure_time=departure_time,
             max_current_a=max_current,
+            target_soc=float(target_soc),
             historical_charging_rate_kw=historical_rate,
         )
 
@@ -835,4 +882,19 @@ class SmartCharger:
         coordinator = entry_data.get("coordinator")
         if coordinator and coordinator.data:
             return coordinator.data.get("e_pres", 0) / 10000
+        return None
+
+    def _get_vehicle_charging_status_entity(self, entry_id: str) -> str | None:
+        """Get the configured vehicle charging status entity for a charger."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+        config_entry = entry_data.get("config_entry")
+        if config_entry:
+            return config_entry.options.get(CONF_VEHICLE_CHARGING_STATUS_ENTITY)
+        return None
+
+    def _find_entry_for_vehicle_status_entity(self, entity_id: str) -> str | None:
+        """Find charger entry ID from a vehicle status entity ID."""
+        for entry_id in self._charger_entry_ids:
+            if self._get_vehicle_charging_status_entity(entry_id) == entity_id:
+                return entry_id
         return None
