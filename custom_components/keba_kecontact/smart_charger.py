@@ -373,12 +373,14 @@ class SmartCharger:
             entry_id = self._find_entry_for_vehicle_status_entity(entity_id)
             if entry_id:
                 _log_info("Charger %s: Vehicle reports charging done (state: %s)", entry_id, new_state.state)
-                if entry_id in self._active_plans:
-                    self._active_plans[entry_id].status = "completed"
                 self.hass.async_create_task(self._on_vehicle_charging_done(entry_id))
 
     async def _on_vehicle_charging_done(self, entry_id: str) -> None:
         """Handle vehicle reporting charging is complete - stop charging and end session."""
+        if entry_id in self._active_plans:
+            del self._active_plans[entry_id]
+            _log_info("Charger %s: Removed plan (vehicle reports done)", entry_id)
+
         entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
         client = entry_data.get("client")
 
