@@ -503,6 +503,9 @@ class SmartCharger:
                 _log_info("Created plan for %s: %d slots, total cost %.2f, reason: %s",
                     plan.charger_id, len(plan.slots), plan.total_cost, plan.reasoning[:100])
 
+            _log_info("Applying initial slots after plan creation...")
+            await self._execute_plans(datetime.now())
+
         except Exception as err:
             msg = f"AI planning failed: {err}"
             _log_error(msg, exc_info=True)
@@ -621,6 +624,12 @@ class SmartCharger:
         current_minute = now.minute
         current_date = now.date().isoformat()
 
+        if not self._active_plans:
+            return
+
+        _log_debug("Executing plans for %d chargers at %s %02d:%02d",
+            len(self._active_plans), current_date, current_hour, current_minute)
+
         for entry_id, plan in list(self._active_plans.items()):
             if now >= plan.departure_time:
                 _log_info("Plan for %s expired (departure time passed)", entry_id)
@@ -632,31 +641,46 @@ class SmartCharger:
 
             if slot:
                 await self._apply_slot(entry_id, slot)
+            else:
+                slot_dates = set(s.date for s in plan.slots)
+                _log_warning("No slot found for %s: date=%s %02d:%02d, plan dates=%s",
+                    entry_id, current_date, current_hour, current_minute, slot_dates)
 
     async def _apply_slot(self, entry_id: str, slot: Any) -> None:
-        """Apply a charging slot's current setting to a charger."""
-        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
-        client = entry_data.get("client")
-
-        if not client:
-            _log_warning("No client found for charger %s", entry_id)
+        """Apply a charging slot's current setting to a charger via HA services."""
+        serial = self._get_charger_serial(entry_id)
+        if not serial:
+            _log_warning("No serial found for charger %s", entry_id)
             return
+
+        switch_entity = f"switch.keba_kecontact_{serial}_charging_enabled"
+        number_entity = f"number.keba_kecontact_{serial}_current_limit"
 
         slot_key = f"{slot.date}_{slot.hour:02d}:{slot.minute:02d}"
         last = self._last_applied_slot.get(entry_id)
         is_change = last is None or last != (slot.current_amps, slot_key)
 
         try:
-            current_ma = slot.current_amps * 1000
-
-            if current_ma == 0:
-                await client.disable()
+            if slot.current_amps == 0:
+                await self.hass.services.async_call(
+                    "switch", "turn_off",
+                    {"entity_id": switch_entity},
+                    blocking=True,
+                )
                 if is_change:
                     _log_info("Charger %s: Paused (slot %s, price %.4f SEK)",
                         entry_id, slot_key, slot.price)
             else:
-                await client.enable()
-                await client.set_current(current_ma)
+                await self.hass.services.async_call(
+                    "number", "set_value",
+                    {"entity_id": number_entity, "value": slot.current_amps},
+                    blocking=True,
+                )
+                await self.hass.services.async_call(
+                    "switch", "turn_on",
+                    {"entity_id": switch_entity},
+                    blocking=True,
+                )
                 if is_change:
                     _log_info("Charger %s: %dA @ %.4f SEK (SoC→%.0f%%)",
                         entry_id, slot.current_amps, slot.price, slot.expected_soc_after)
@@ -668,18 +692,31 @@ class SmartCharger:
             _log_error("Failed to apply slot to %s: %s", entry_id, err)
 
     async def _restore_charger_to_normal(self, entry_id: str) -> None:
-        """Restore charger to user-configured current limit."""
-        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
-        client = entry_data.get("client")
-        config_entry = entry_data.get("config_entry")
-
-        if not client or not config_entry:
+        """Restore charger to user-configured current limit via HA services."""
+        serial = self._get_charger_serial(entry_id)
+        if not serial:
             return
+
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+        config_entry = entry_data.get("config_entry")
+        if not config_entry:
+            return
+
+        switch_entity = f"switch.keba_kecontact_{serial}_charging_enabled"
+        number_entity = f"number.keba_kecontact_{serial}_current_limit"
 
         try:
             user_limit = config_entry.options.get("current_limit", 16)
-            await client.enable()
-            await client.set_current(int(user_limit * 1000))
+            await self.hass.services.async_call(
+                "number", "set_value",
+                {"entity_id": number_entity, "value": user_limit},
+                blocking=True,
+            )
+            await self.hass.services.async_call(
+                "switch", "turn_on",
+                {"entity_id": switch_entity},
+                blocking=True,
+            )
             _log_info("Restored charger %s to user limit %dA", entry_id, user_limit)
         except Exception as err:
             _log_error("Failed to restore charger %s: %s", entry_id, err)
@@ -895,16 +932,21 @@ class SmartCharger:
             ))
         return slots
 
-    def _get_state_entity_id(self, entry_id: str) -> str | None:
-        """Get the state entity ID for a charger entry."""
+    def _get_charger_serial(self, entry_id: str) -> str | None:
+        """Get charger serial number from entry ID."""
         entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
         config_entry: ConfigEntry | None = entry_data.get("config_entry")
+        if config_entry:
+            serial = config_entry.title.split("(")[-1].rstrip(")")
+            return serial.lower()
+        return None
 
-        if not config_entry:
-            return None
-
-        serial = config_entry.title.split("(")[-1].rstrip(")")
-        return f"sensor.keba_kecontact_{serial.lower()}_status"
+    def _get_state_entity_id(self, entry_id: str) -> str | None:
+        """Get the state entity ID for a charger entry."""
+        serial = self._get_charger_serial(entry_id)
+        if serial:
+            return f"sensor.keba_kecontact_{serial}_status"
+        return None
 
     def _get_entry_id_from_state_entity(self, entity_id: str) -> str | None:
         """Get entry ID from a state entity ID."""
