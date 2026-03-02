@@ -67,12 +67,34 @@ class ActiveSession:
     start_soc: float
     start_energy_kwh: float
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "charger_entry_id": self.charger_entry_id,
+            "vehicle_soc_entity": self.vehicle_soc_entity,
+            "start_time": self.start_time.isoformat(),
+            "start_soc": self.start_soc,
+            "start_energy_kwh": self.start_energy_kwh,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ActiveSession:
+        """Deserialize from dictionary."""
+        return cls(
+            charger_entry_id=data["charger_entry_id"],
+            vehicle_soc_entity=data["vehicle_soc_entity"],
+            start_time=datetime.fromisoformat(data["start_time"]),
+            start_soc=data["start_soc"],
+            start_energy_kwh=data["start_energy_kwh"],
+        )
+
 
 @dataclass
 class ChargingHistoryData:
     """Complete charging history storage."""
 
     sessions: dict[str, list[ChargingSession]] = field(default_factory=dict)
+    active_sessions: dict[str, ActiveSession] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize all data."""
@@ -80,7 +102,11 @@ class ChargingHistoryData:
             "sessions": {
                 charger_id: [s.to_dict() for s in sessions]
                 for charger_id, sessions in self.sessions.items()
-            }
+            },
+            "active_sessions": {
+                charger_id: session.to_dict()
+                for charger_id, session in self.active_sessions.items()
+            },
         }
 
     @classmethod
@@ -89,7 +115,10 @@ class ChargingHistoryData:
         sessions = {}
         for charger_id, session_list in data.get("sessions", {}).items():
             sessions[charger_id] = [ChargingSession.from_dict(s) for s in session_list]
-        return cls(sessions=sessions)
+        active_sessions = {}
+        for charger_id, session_data in data.get("active_sessions", {}).items():
+            active_sessions[charger_id] = ActiveSession.from_dict(session_data)
+        return cls(sessions=sessions, active_sessions=active_sessions)
 
 
 class ChargingHistoryTracker:
@@ -111,9 +140,11 @@ class ChargingHistoryTracker:
                 )
                 data = json.loads(content)
                 self._data = ChargingHistoryData.from_dict(data)
-                _LOGGER.debug(
-                    "Loaded charging history: %d chargers",
-                    len(self._data.sessions)
+                self._active_sessions = self._data.active_sessions.copy()
+                _LOGGER.info(
+                    "Loaded charging history: %d chargers, %d active sessions",
+                    len(self._data.sessions),
+                    len(self._active_sessions),
                 )
         except Exception as err:
             _LOGGER.error("Failed to load charging history: %s", err)
@@ -122,6 +153,7 @@ class ChargingHistoryTracker:
     async def async_save(self) -> None:
         """Save history to storage."""
         try:
+            self._data.active_sessions = self._active_sessions.copy()
             content = json.dumps(self._data.to_dict(), indent=2)
             await self.hass.async_add_executor_job(
                 self._storage_path.write_text, content
@@ -130,7 +162,7 @@ class ChargingHistoryTracker:
         except Exception as err:
             _LOGGER.error("Failed to save charging history: %s", err)
 
-    def start_session(
+    async def start_session(
         self,
         charger_entry_id: str,
         vehicle_soc_entity: str,
@@ -145,11 +177,12 @@ class ChargingHistoryTracker:
             start_soc=current_soc,
             start_energy_kwh=current_energy_kwh,
         )
-        _LOGGER.debug(
+        _LOGGER.info(
             "Started tracking session for %s at SoC %.1f%%",
             charger_entry_id,
             current_soc,
         )
+        await self.async_save()
 
     async def end_session(
         self,
@@ -290,3 +323,11 @@ class ChargingHistoryTracker:
     def get_sessions_for_charger(self, charger_entry_id: str) -> list[ChargingSession]:
         """Get all recorded sessions for a charger."""
         return self._data.sessions.get(charger_entry_id, [])
+
+    def get_all_active_sessions(self) -> dict[str, ActiveSession]:
+        """Get all active sessions (for restart detection)."""
+        return self._active_sessions.copy()
+
+    def get_active_session(self, charger_entry_id: str) -> ActiveSession | None:
+        """Get active session for a specific charger."""
+        return self._active_sessions.get(charger_entry_id)

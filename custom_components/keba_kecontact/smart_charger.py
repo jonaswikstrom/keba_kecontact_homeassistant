@@ -236,26 +236,69 @@ class SmartCharger:
             state = self.hass.states.get(state_entity) if state_entity else None
             _log_info("  ai_ready=%s, state_entity=%s, state=%s", ai_ready, state_entity, state.state if state else None)
 
+        await self._detect_missed_disconnects()
+
         connected = self._get_connected_chargers()
         _log_info("Connected chargers found: %s", connected)
 
         if connected:
             _log_info("Found %d already connected charger(s), creating single batch plan", len(connected))
             for entry_id in connected:
-                soc_entity = self._get_charger_soc_entity(entry_id)
-                if soc_entity:
-                    current_soc = self._get_soc_normalized(soc_entity)
-                    session_energy = self._get_charger_session_energy(entry_id)
-                    if current_soc is not None:
-                        self._history_tracker.start_session(
-                            entry_id,
-                            soc_entity,
-                            current_soc,
-                            session_energy or 0,
-                        )
+                if not self._history_tracker.is_session_active(entry_id):
+                    soc_entity = self._get_charger_soc_entity(entry_id)
+                    if soc_entity:
+                        current_soc = self._get_soc_normalized(soc_entity)
+                        session_energy = self._get_charger_session_energy(entry_id)
+                        if current_soc is not None:
+                            await self._history_tracker.start_session(
+                                entry_id,
+                                soc_entity,
+                                current_soc,
+                                session_energy or 0,
+                            )
             await self._create_plans_for_chargers(connected)
         else:
             _log_info("No AI-ready connected chargers found at startup")
+
+    async def _detect_missed_disconnects(self) -> None:
+        """Detect and end sessions for cars that disconnected while we were down."""
+        active_sessions = self._history_tracker.get_all_active_sessions()
+        if not active_sessions:
+            return
+
+        _log_info("Checking %d persisted active sessions for missed disconnects...", len(active_sessions))
+
+        for entry_id, session in active_sessions.items():
+            state_entity = self._get_state_entity_id(entry_id)
+            if not state_entity:
+                _log_warning("Session for %s has no state entity, ending session", entry_id)
+                await self._history_tracker.end_session(entry_id, session.start_soc, 0)
+                continue
+
+            state = self.hass.states.get(state_entity)
+            if not state:
+                _log_warning("State entity %s not found, keeping session active", state_entity)
+                continue
+
+            is_connected = state.state in ("Charging", "Ready for charging")
+
+            if not is_connected:
+                _log_info(
+                    "Detected missed disconnect for %s (state: %s, session started: %s)",
+                    entry_id, state.state, session.start_time.isoformat()
+                )
+                current_soc = self._get_soc_normalized(session.vehicle_soc_entity)
+                session_energy = self._get_charger_session_energy(entry_id)
+                await self._history_tracker.end_session(
+                    entry_id,
+                    current_soc if current_soc else session.start_soc,
+                    session_energy or 0,
+                )
+            else:
+                _log_info(
+                    "Session for %s still active (connected since %s)",
+                    entry_id, session.start_time.isoformat()
+                )
 
     async def async_stop(self) -> None:
         """Stop the smart charger."""
@@ -270,7 +313,7 @@ class SmartCharger:
         for unsub in self._unsub_vehicle_status:
             unsub()
 
-        _LOGGER.info("Smart charger stopped")
+        _log_info("Smart charger stopped")
 
     @callback
     def _handle_nordpool_change(self, event: Event) -> None:
@@ -282,7 +325,7 @@ class SmartCharger:
         tomorrow_available = new_state.attributes.get("tomorrow_available", False)
 
         if self._last_tomorrow_valid is False and tomorrow_available is True:
-            _LOGGER.info("Tomorrow's prices now available, checking if replan needed")
+            _log_info("Tomorrow's prices now available, checking if replan needed")
             self.hass.async_create_task(self._replan_overnight_if_needed())
 
         self._last_tomorrow_valid = tomorrow_available
@@ -305,10 +348,10 @@ class SmartCharger:
         new_value = new_state.state
 
         if old_value == "Not ready for charging" and new_value in ("Ready for charging", "Charging"):
-            _LOGGER.info("Car connected to charger %s (state: %s), initiating AI planning", entry_id, new_value)
+            _log_info("Car connected to charger %s (state: %s), initiating AI planning", entry_id, new_value)
             self.hass.async_create_task(self._on_car_connected(entry_id))
         elif old_value in ("Ready for charging", "Charging") and new_value == "Not ready for charging":
-            _LOGGER.info("Car disconnected from charger %s", entry_id)
+            _log_info("Car disconnected from charger %s", entry_id)
             self.hass.async_create_task(self._on_car_disconnected(entry_id))
 
     CHARGING_DONE_STATES = {"done", "idle", "completed", "full", "finished", "not_charging"}
@@ -328,9 +371,34 @@ class SmartCharger:
         if new_lower in self.CHARGING_DONE_STATES and old_lower not in self.CHARGING_DONE_STATES:
             entity_id = event.data.get("entity_id")
             entry_id = self._find_entry_for_vehicle_status_entity(entity_id)
-            if entry_id and entry_id in self._active_plans:
-                self._active_plans[entry_id].status = "completed"
+            if entry_id:
                 _log_info("Charger %s: Vehicle reports charging done (state: %s)", entry_id, new_state.state)
+                if entry_id in self._active_plans:
+                    self._active_plans[entry_id].status = "completed"
+                self.hass.async_create_task(self._on_vehicle_charging_done(entry_id))
+
+    async def _on_vehicle_charging_done(self, entry_id: str) -> None:
+        """Handle vehicle reporting charging is complete - stop charging and end session."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+        client = entry_data.get("client")
+
+        if client:
+            try:
+                await client.disable()
+                _log_info("Charger %s: Disabled charging (vehicle reports done)", entry_id)
+            except Exception as err:
+                _log_error("Failed to disable charger %s: %s", entry_id, err)
+
+        soc_entity = self._get_charger_soc_entity(entry_id)
+        if soc_entity:
+            current_soc = self._get_soc_normalized(soc_entity)
+            session_energy = self._get_charger_session_energy(entry_id)
+            if current_soc is not None:
+                await self._history_tracker.end_session(
+                    entry_id,
+                    current_soc,
+                    session_energy or 0,
+                )
 
     async def _on_car_connected(self, triggered_entry_id: str) -> None:
         """Handle car connection - create plans for ALL connected cars."""
@@ -346,7 +414,7 @@ class SmartCharger:
                 current_soc = self._get_soc_normalized(soc_entity)
                 session_energy = self._get_charger_session_energy(triggered_entry_id)
                 if current_soc is not None:
-                    self._history_tracker.start_session(
+                    await self._history_tracker.start_session(
                         triggered_entry_id,
                         soc_entity,
                         current_soc,
@@ -355,7 +423,7 @@ class SmartCharger:
 
             await self._create_plans_for_all_connected()
         except Exception as err:
-            _LOGGER.error("Failed to create charging plans: %s", err, exc_info=True)
+            _log_error("Failed to create charging plans: %s", err, exc_info=True)
         finally:
             self._planning_in_progress = False
 
@@ -363,7 +431,7 @@ class SmartCharger:
         """Handle car disconnection."""
         if entry_id in self._active_plans:
             del self._active_plans[entry_id]
-            _LOGGER.info("Removed plan for disconnected charger %s", entry_id)
+            _log_info("Removed plan for disconnected charger %s", entry_id)
 
         soc_entity = self._get_charger_soc_entity(entry_id)
         if soc_entity:
@@ -378,7 +446,7 @@ class SmartCharger:
 
         remaining_connected = self._get_connected_chargers()
         if remaining_connected:
-            _LOGGER.info(
+            _log_info(
                 "Replanning for remaining %d connected chargers",
                 len(remaining_connected)
             )
@@ -477,7 +545,7 @@ class SmartCharger:
                     })
 
         if deviations:
-            _LOGGER.info(
+            _log_info(
                 "Significant charging deviation detected: %s, validating with Haiku",
                 deviations
             )
@@ -494,7 +562,7 @@ class SmartCharger:
                 )
 
                 if result.replan_needed:
-                    _LOGGER.info(
+                    _log_info(
                         "Haiku recommends replan due to progress deviation: %s",
                         result.reason
                     )
@@ -504,7 +572,7 @@ class SmartCharger:
                     _LOGGER.debug("Haiku says current plan is still OK: %s", result.reason)
 
             except Exception as err:
-                _LOGGER.error("Progress validation failed: %s", err)
+                _log_error("Progress validation failed: %s", err)
 
     async def _replan_overnight_if_needed(self) -> None:
         """Check if plans should be updated with new tomorrow prices."""
@@ -536,14 +604,14 @@ class SmartCharger:
             )
 
             if result.replan_needed:
-                _LOGGER.info("Replan needed: %s", result.reason)
+                _log_info("Replan needed: %s", result.reason)
                 connected = list(self._active_plans.keys())
                 await self._create_plans_for_chargers(connected)
             else:
                 _LOGGER.debug("Current plans are still optimal: %s", result.reason)
 
         except Exception as err:
-            _LOGGER.error("Plan validation failed: %s", err)
+            _log_error("Plan validation failed: %s", err)
 
     async def _execute_plans(self, now: datetime) -> None:
         """Execute charging plans - apply current time slot's settings."""
@@ -553,7 +621,7 @@ class SmartCharger:
 
         for entry_id, plan in list(self._active_plans.items()):
             if now >= plan.departure_time:
-                _LOGGER.info("Plan for %s expired (departure time passed)", entry_id)
+                _log_info("Plan for %s expired (departure time passed)", entry_id)
                 del self._active_plans[entry_id]
                 await self._restore_charger_to_normal(entry_id)
                 continue
@@ -569,7 +637,7 @@ class SmartCharger:
         client = entry_data.get("client")
 
         if not client:
-            _LOGGER.warning("No client found for charger %s", entry_id)
+            _log_warning("No client found for charger %s", entry_id)
             return
 
         slot_key = f"{slot.date}_{slot.hour:02d}:{slot.minute:02d}"
@@ -595,7 +663,7 @@ class SmartCharger:
                 self._last_applied_slot[entry_id] = (slot.current_amps, slot_key)
 
         except Exception as err:
-            _LOGGER.error("Failed to apply slot to %s: %s", entry_id, err)
+            _log_error("Failed to apply slot to %s: %s", entry_id, err)
 
     async def _restore_charger_to_normal(self, entry_id: str) -> None:
         """Restore charger to user-configured current limit."""
@@ -610,9 +678,9 @@ class SmartCharger:
             user_limit = config_entry.options.get("current_limit", 16)
             await client.enable()
             await client.set_current(int(user_limit * 1000))
-            _LOGGER.info("Restored charger %s to user limit %dA", entry_id, user_limit)
+            _log_info("Restored charger %s to user limit %dA", entry_id, user_limit)
         except Exception as err:
-            _LOGGER.error("Failed to restore charger %s: %s", entry_id, err)
+            _log_error("Failed to restore charger %s: %s", entry_id, err)
 
     def _get_connected_chargers(self) -> list[str]:
         """Get list of chargers with cars connected and AI config complete."""
@@ -672,7 +740,7 @@ class SmartCharger:
 
         current_soc = self._get_soc_normalized(soc_entity)
         if current_soc is None:
-            _LOGGER.warning("Could not get SoC for %s from %s", entry_id, soc_entity)
+            _log_warning("Could not get SoC for %s from %s", entry_id, soc_entity)
             return None
 
         now = datetime.now()
