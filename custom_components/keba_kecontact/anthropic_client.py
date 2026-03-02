@@ -49,7 +49,7 @@ def _log_info(msg: str, *args) -> None:
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 MODEL_SONNET = "claude-sonnet-4-20250514"
-MODEL_HAIKU = "claude-3-5-haiku-20241022"
+MODEL_HAIKU = "claude-haiku-4-5-20251001"
 
 
 @dataclass
