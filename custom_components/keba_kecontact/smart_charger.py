@@ -178,14 +178,16 @@ class SmartCharger:
         )
 
         for entry_id in self._charger_entry_ids:
-            state_entity_id = self._get_state_entity_id(entry_id)
-            if state_entity_id:
+            plugged_entity_id = self._get_plugged_on_ev_entity_id(entry_id)
+            if plugged_entity_id:
                 unsub = async_track_state_change_event(
                     self.hass,
-                    [state_entity_id],
-                    self._handle_charger_state_change,
+                    [plugged_entity_id],
+                    self._handle_plugged_state_change,
                 )
                 self._unsub_charger_states.append(unsub)
+                _log_info("Listening to plugged_on_ev: %s for charger %s",
+                    plugged_entity_id, entry_id)
 
             vehicle_status_entity = self._get_vehicle_charging_status_entity(entry_id)
             if vehicle_status_entity:
@@ -269,18 +271,18 @@ class SmartCharger:
         _log_info("Checking %d persisted active sessions for missed disconnects...", len(active_sessions))
 
         for entry_id, session in active_sessions.items():
-            state_entity = self._get_state_entity_id(entry_id)
-            if not state_entity:
-                _log_warning("Session for %s has no state entity, ending session", entry_id)
+            plugged_entity = self._get_plugged_on_ev_entity_id(entry_id)
+            if not plugged_entity:
+                _log_warning("Session for %s has no plugged_on_ev entity, ending session", entry_id)
                 await self._history_tracker.end_session(entry_id, session.start_soc, 0)
                 continue
 
-            state = self.hass.states.get(state_entity)
+            state = self.hass.states.get(plugged_entity)
             if not state:
-                _log_warning("State entity %s not found, keeping session active", state_entity)
+                _log_warning("Plugged entity %s not found, keeping session active", plugged_entity)
                 continue
 
-            is_connected = state.state in ("Charging", "Ready for charging")
+            is_connected = state.state == "on"
 
             if not is_connected:
                 _log_info(
@@ -331,28 +333,38 @@ class SmartCharger:
         self._last_tomorrow_valid = tomorrow_available
 
     @callback
-    def _handle_charger_state_change(self, event: Event) -> None:
-        """Handle charger state changes (car plugged in/out)."""
+    def _handle_plugged_state_change(self, event: Event) -> None:
+        """Handle plugged_on_ev state changes (car plugged in/out)."""
         entity_id = event.data.get("entity_id", "")
-        new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
+        new_state = event.data.get("new_state")
 
-        if not new_state or not old_state:
-            return
-
-        entry_id = self._get_entry_id_from_state_entity(entity_id)
-        if not entry_id:
+        if not old_state or not new_state:
             return
 
         old_value = old_state.state
         new_value = new_state.state
 
-        if old_value == "Not ready for charging" and new_value in ("Ready for charging", "Charging"):
-            _log_info("Car connected to charger %s (state: %s), initiating AI planning", entry_id, new_value)
-            self.hass.async_create_task(self._on_car_connected(entry_id))
-        elif old_value in ("Ready for charging", "Charging") and new_value == "Not ready for charging":
-            _log_info("Car disconnected from charger %s", entry_id)
-            self.hass.async_create_task(self._on_car_disconnected(entry_id))
+        entry_id = self._get_entry_id_from_plugged_entity(entity_id)
+        if not entry_id:
+            return
+
+        _log_info("Plugged state change for %s: %s -> %s", entry_id, old_value, new_value)
+
+        if old_value != "on" and new_value == "on":
+            existing_plan = self._active_plans.get(entry_id)
+            now = datetime.now()
+
+            if existing_plan and now < existing_plan.departure_time:
+                _log_info("Resuming existing plan for %s", entry_id)
+                self.hass.async_create_task(self._execute_plans(now))
+            else:
+                _log_info("Car connected to charger %s, creating new plan", entry_id)
+                self.hass.async_create_task(self._on_car_connected(entry_id))
+
+        elif old_value == "on" and new_value != "on":
+            _log_info("Car unplugged from %s - pausing but keeping plan", entry_id)
+            self.hass.async_create_task(self._pause_charger(entry_id))
 
     CHARGING_DONE_STATES = {"done", "idle", "completed", "full", "finished", "not_charging"}
 
@@ -381,12 +393,15 @@ class SmartCharger:
             del self._active_plans[entry_id]
             _log_info("Charger %s: Removed plan (vehicle reports done)", entry_id)
 
-        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
-        client = entry_data.get("client")
-
-        if client:
+        serial = self._get_charger_serial(entry_id)
+        if serial:
+            switch_entity = f"switch.keba_kecontact_{serial}_charging_enabled"
             try:
-                await client.disable()
+                await self.hass.services.async_call(
+                    "switch", "turn_off",
+                    {"entity_id": switch_entity},
+                    blocking=True,
+                )
                 _log_info("Charger %s: Disabled charging (vehicle reports done)", entry_id)
             except Exception as err:
                 _log_error("Failed to disable charger %s: %s", entry_id, err)
@@ -401,6 +416,13 @@ class SmartCharger:
                     current_soc,
                     session_energy or 0,
                 )
+
+        remaining = self._get_connected_chargers()
+        remaining = [eid for eid in remaining if eid != entry_id]
+        if remaining:
+            _log_info("Replanning for %d remaining chargers after %s completed",
+                len(remaining), entry_id)
+            await self._create_plans_for_chargers(remaining)
 
     async def _on_car_connected(self, triggered_entry_id: str) -> None:
         """Handle car connection - create plans for ALL connected cars."""
@@ -619,7 +641,7 @@ class SmartCharger:
             _log_error("Plan validation failed: %s", err)
 
     async def _execute_plans(self, now: datetime) -> None:
-        """Execute charging plans - apply current time slot's settings."""
+        """Execute charging plans - apply current time slot's settings with current clamping."""
         current_hour = now.hour
         current_minute = now.minute
         current_date = now.date().isoformat()
@@ -629,6 +651,8 @@ class SmartCharger:
 
         _log_debug("Executing plans for %d chargers at %s %02d:%02d",
             len(self._active_plans), current_date, current_hour, current_minute)
+
+        slots_to_apply: dict[str, tuple[Any, int]] = {}
 
         for entry_id, plan in list(self._active_plans.items()):
             if now >= plan.departure_time:
@@ -640,40 +664,67 @@ class SmartCharger:
             slot = plan.get_slot_for_time(current_hour, current_minute, current_date)
 
             if slot:
-                await self._apply_slot(entry_id, slot)
+                charger_max = self._get_charger_max_current(entry_id)
+                slots_to_apply[entry_id] = (slot, charger_max)
             else:
                 slot_dates = set(s.date for s in plan.slots)
                 _log_warning("No slot found for %s: date=%s %02d:%02d, plan dates=%s",
                     entry_id, current_date, current_hour, current_minute, slot_dates)
 
-    async def _apply_slot(self, entry_id: str, slot: Any) -> None:
+        if not slots_to_apply:
+            return
+
+        requested: dict[str, int] = {}
+        for entry_id, (slot, charger_max) in slots_to_apply.items():
+            requested[entry_id] = min(slot.current_amps, charger_max)
+
+        total_requested = sum(requested.values())
+        if total_requested > self._max_current:
+            scale = self._max_current / total_requested
+            for entry_id in requested:
+                original = requested[entry_id]
+                requested[entry_id] = max(0, int(original * scale))
+            _log_warning("Total %dA exceeds max %dA, scaled down proportionally",
+                total_requested, self._max_current)
+
+        for entry_id, (slot, _) in slots_to_apply.items():
+            clamped_amps = requested[entry_id]
+            await self._apply_slot(entry_id, slot, clamped_amps)
+
+    async def _apply_slot(self, entry_id: str, slot: Any, clamped_amps: int | None = None) -> None:
         """Apply a charging slot's current setting to a charger via HA services."""
         serial = self._get_charger_serial(entry_id)
         if not serial:
             _log_warning("No serial found for charger %s", entry_id)
             return
 
+        current_amps = clamped_amps if clamped_amps is not None else slot.current_amps
+
         switch_entity = f"switch.keba_kecontact_{serial}_charging_enabled"
         number_entity = f"number.keba_kecontact_{serial}_current_limit"
 
         slot_key = f"{slot.date}_{slot.hour:02d}:{slot.minute:02d}"
         last = self._last_applied_slot.get(entry_id)
-        is_change = last is None or last != (slot.current_amps, slot_key)
+        is_change = last is None or last != (current_amps, slot_key)
+
+        clamped_info = ""
+        if clamped_amps is not None and clamped_amps != slot.current_amps:
+            clamped_info = f" (AI wanted {slot.current_amps}A, clamped)"
 
         try:
-            if slot.current_amps == 0:
+            if current_amps == 0:
                 await self.hass.services.async_call(
                     "switch", "turn_off",
                     {"entity_id": switch_entity},
                     blocking=True,
                 )
                 if is_change:
-                    _log_info("Charger %s: Paused (slot %s, price %.4f SEK)",
-                        entry_id, slot_key, slot.price)
+                    _log_info("Charger %s: Paused (slot %s, price %.4f SEK)%s",
+                        entry_id, slot_key, slot.price, clamped_info)
             else:
                 await self.hass.services.async_call(
                     "number", "set_value",
-                    {"entity_id": number_entity, "value": slot.current_amps},
+                    {"entity_id": number_entity, "value": current_amps},
                     blocking=True,
                 )
                 await self.hass.services.async_call(
@@ -682,11 +733,11 @@ class SmartCharger:
                     blocking=True,
                 )
                 if is_change:
-                    _log_info("Charger %s: %dA @ %.4f SEK (SoC→%.0f%%)",
-                        entry_id, slot.current_amps, slot.price, slot.expected_soc_after)
+                    _log_info("Charger %s: %dA @ %.4f SEK (SoC→%.0f%%)%s",
+                        entry_id, current_amps, slot.price, slot.expected_soc_after, clamped_info)
 
             if is_change:
-                self._last_applied_slot[entry_id] = (slot.current_amps, slot_key)
+                self._last_applied_slot[entry_id] = (current_amps, slot_key)
 
         except Exception as err:
             _log_error("Failed to apply slot to %s: %s", entry_id, err)
@@ -721,19 +772,40 @@ class SmartCharger:
         except Exception as err:
             _log_error("Failed to restore charger %s: %s", entry_id, err)
 
+    async def _pause_charger(self, entry_id: str) -> None:
+        """Pause charging without removing the plan."""
+        serial = self._get_charger_serial(entry_id)
+        if not serial:
+            return
+
+        switch_entity = f"switch.keba_kecontact_{serial}_charging_enabled"
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_off",
+                {"entity_id": switch_entity},
+                blocking=True,
+            )
+            _log_info("Paused charger %s (car unplugged)", entry_id)
+        except Exception as err:
+            _log_error("Failed to pause charger %s: %s", entry_id, err)
+
     def _get_connected_chargers(self) -> list[str]:
-        """Get list of chargers with cars connected and AI config complete."""
+        """Get list of chargers with cars connected and AI config complete.
+
+        Uses plugged_on_ev binary sensor to detect if car is physically connected.
+        """
         connected = []
 
         for entry_id in self._charger_entry_ids:
             if not self._is_charger_ai_ready(entry_id):
                 continue
 
-            state_entity = self._get_state_entity_id(entry_id)
-            if state_entity:
-                state = self.hass.states.get(state_entity)
-                if state and state.state in ("Charging", "Ready for charging"):
+            plugged_entity = self._get_plugged_on_ev_entity_id(entry_id)
+            if plugged_entity:
+                state = self.hass.states.get(plugged_entity)
+                if state and state.state == "on":
                     connected.append(entry_id)
+                    _log_info("Charger %s has car connected (plugged_on_ev=on)", entry_id)
 
         return connected
 
@@ -948,6 +1020,20 @@ class SmartCharger:
             return f"sensor.keba_kecontact_{serial}_status"
         return None
 
+    def _get_plugged_on_ev_entity_id(self, entry_id: str) -> str | None:
+        """Get plugged_on_ev binary sensor entity ID for a charger."""
+        serial = self._get_charger_serial(entry_id)
+        if serial:
+            return f"binary_sensor.keba_kecontact_{serial}_plugged_on_ev"
+        return None
+
+    def _get_entry_id_from_plugged_entity(self, entity_id: str) -> str | None:
+        """Get entry_id from plugged_on_ev entity ID."""
+        for eid in self._charger_entry_ids:
+            if self._get_plugged_on_ev_entity_id(eid) == entity_id:
+                return eid
+        return None
+
     def _get_entry_id_from_state_entity(self, entity_id: str) -> str | None:
         """Get entry ID from a state entity ID."""
         for entry_id in self._charger_entry_ids:
@@ -995,6 +1081,23 @@ class SmartCharger:
         if coordinator and coordinator.data:
             return coordinator.data.get("e_pres", 0) / 10000
         return None
+
+    def _get_charger_max_current(self, entry_id: str) -> int:
+        """Get maximum current for a charger based on hardware and config limits."""
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+        coordinator = entry_data.get("coordinator")
+        config_entry = entry_data.get("config_entry")
+
+        hw_limit = 32
+        if coordinator and coordinator.data:
+            hw_limit_ma = coordinator.data.get("curr_hw", 32000)
+            hw_limit = int(hw_limit_ma / 1000)
+
+        user_limit = 32
+        if config_entry:
+            user_limit = config_entry.options.get("current_limit", 32)
+
+        return min(hw_limit, user_limit, self._max_current)
 
     def _get_vehicle_charging_status_entity(self, entry_id: str) -> str | None:
         """Get the configured vehicle charging status entity for a charger."""
