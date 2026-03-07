@@ -211,7 +211,10 @@ OPTIMIZATION GOAL:
 Minimize total electricity cost while meeting all constraints. Prefer cheaper slots when possible, but ensure vehicles are fully charged by departure.
 
 OUTPUT FORMAT:
-You must respond with valid JSON matching the tool schema exactly. Keep output minimal - only active charging slots."""
+- You must respond with valid JSON matching the tool schema exactly
+- Keep output minimal - only active charging slots
+- All numeric values (cost, price, soc_after) must be computed numbers, NOT expressions
+- Example: "cost": 0.52 (correct), NOT "cost": 0.3374 * 1.64 (wrong)"""
 
 CREATE_PLAN_TOOL = {
     "name": "create_charging_plan",
@@ -622,9 +625,16 @@ class AnthropicChargingPlanner:
                 tool_input = content.get("input", {})
                 _log_info("tool_input keys: %s", list(tool_input.keys()))
                 plans_data = tool_input.get("plans", [])
+                if isinstance(plans_data, str):
+                    try:
+                        plans_data = json.loads(plans_data)
+                        _log_info("Parsed plans from JSON string")
+                    except json.JSONDecodeError:
+                        _log_error("Failed to parse plans JSON string")
+                        plans_data = []
                 _log_info("plans array length: %d", len(plans_data))
-                if plans_data:
-                    _log_info("First plan keys: %s", list(plans_data[0].keys()) if plans_data else [])
+                if plans_data and isinstance(plans_data, list) and len(plans_data) > 0:
+                    _log_info("First plan keys: %s", list(plans_data[0].keys()) if isinstance(plans_data[0], dict) else [])
                 reasoning = tool_input.get("reasoning", "")
 
                 for plan_data in plans_data:
