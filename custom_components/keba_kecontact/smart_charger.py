@@ -14,6 +14,7 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
+from homeassistant.util import dt as dt_util
 
 from .anthropic_client import (
     AnthropicChargingPlanner,
@@ -549,9 +550,10 @@ class SmartCharger:
             if actual_soc is None:
                 continue
 
-            current_hour = now.hour
-            current_minute = now.minute
-            current_date = now.date().isoformat()
+            local_now = dt_util.as_local(now)
+            current_hour = local_now.hour
+            current_minute = local_now.minute
+            current_date = local_now.date().isoformat()
             slot = plan.get_slot_for_time(current_hour, current_minute, current_date)
 
             if slot and slot.expected_soc_after > 0:
@@ -606,7 +608,7 @@ class SmartCharger:
         if not self._active_plans:
             return
 
-        now = datetime.now()
+        now = dt_util.now()
         overnight_plans = []
 
         for plan in self._active_plans.values():
@@ -642,9 +644,10 @@ class SmartCharger:
 
     async def _execute_plans(self, now: datetime) -> None:
         """Execute charging plans - apply current time slot's settings with current clamping."""
-        current_hour = now.hour
-        current_minute = now.minute
-        current_date = now.date().isoformat()
+        local_now = dt_util.as_local(now)
+        current_hour = local_now.hour
+        current_minute = local_now.minute
+        current_date = local_now.date().isoformat()
 
         if not self._active_plans:
             return
