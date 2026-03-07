@@ -653,6 +653,7 @@ class SmartCharger:
             len(self._active_plans), current_date, current_hour, current_minute)
 
         slots_to_apply: dict[str, tuple[Any, int]] = {}
+        chargers_to_pause: list[str] = []
 
         for entry_id, plan in list(self._active_plans.items()):
             if now >= plan.departure_time:
@@ -667,9 +668,10 @@ class SmartCharger:
                 charger_max = self._get_charger_max_current(entry_id)
                 slots_to_apply[entry_id] = (slot, charger_max)
             else:
-                slot_dates = set(s.date for s in plan.slots)
-                _log_warning("No slot found for %s: date=%s %02d:%02d, plan dates=%s",
-                    entry_id, current_date, current_hour, current_minute, slot_dates)
+                chargers_to_pause.append(entry_id)
+
+        for entry_id in chargers_to_pause:
+            await self._pause_charger(entry_id)
 
         if not slots_to_apply:
             return

@@ -203,14 +203,15 @@ CHARGING CALCULATIONS:
 TIME SLOTS:
 - Prices are provided with variable resolution (15-min, 30-min, or hourly)
 - The slot duration is indicated in the prompt (e.g., "15-minute slots")
-- Create one charging slot per price slot, matching the exact times provided
 - Each slot needs hour AND minute fields (e.g., hour=14, minute=30 for 14:30)
+- IMPORTANT: Only include slots where charging occurs (current_amps > 0)
+- Do NOT include slots with current_amps=0. Missing slots are treated as paused.
 
 OPTIMIZATION GOAL:
 Minimize total electricity cost while meeting all constraints. Prefer cheaper slots when possible, but ensure vehicles are fully charged by departure.
 
 OUTPUT FORMAT:
-You must respond with valid JSON matching the tool schema exactly."""
+You must respond with valid JSON matching the tool schema exactly. Keep output minimal - only active charging slots."""
 
 CREATE_PLAN_TOOL = {
     "name": "create_charging_plan",
@@ -300,15 +301,56 @@ class TokenUsage:
 class AnthropicChargingPlanner:
     """Anthropic API client for EV charging optimization."""
 
+    PAYLOAD_HISTORY_FILE = "/config/keba_ai_payloads.json"
+    MAX_PAYLOAD_HISTORY = 5
+
     def __init__(self, api_key: str) -> None:
         """Initialize the planner with API key."""
         self._api_key = api_key
         self._token_usage = TokenUsage()
+        self._payload_history: list[dict] = []
+        self._load_payload_history()
 
     @property
     def token_usage(self) -> TokenUsage:
         """Return token usage statistics."""
         return self._token_usage
+
+    @property
+    def payload_history(self) -> list[dict]:
+        """Return payload history for debugging."""
+        return self._payload_history.copy()
+
+    def _load_payload_history(self) -> None:
+        """Load payload history from file."""
+        import json
+        try:
+            with open(self.PAYLOAD_HISTORY_FILE, "r", encoding="utf-8") as f:
+                self._payload_history = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self._payload_history = []
+
+    def _save_payload_history(self) -> None:
+        """Save payload history to file."""
+        import json
+        try:
+            with open(self.PAYLOAD_HISTORY_FILE, "w", encoding="utf-8") as f:
+                json.dump(self._payload_history, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            _LOGGER.warning("Failed to save payload history: %s", e)
+
+    def _add_payload(self, prompt: str, response: dict, model: str) -> None:
+        """Add a payload to history, keeping only the latest entries."""
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "model": model,
+            "prompt": prompt,
+            "response": response,
+        }
+        self._payload_history.append(entry)
+        while len(self._payload_history) > self.MAX_PAYLOAD_HISTORY:
+            self._payload_history.pop(0)
+        self._save_payload_history()
 
     async def create_plan(
         self,
@@ -337,6 +379,8 @@ class AnthropicChargingPlanner:
                     prompt=prompt,
                     tools=[CREATE_PLAN_TOOL],
                 )
+
+                self._add_payload(prompt, response, MODEL_SONNET)
 
                 plans = self._parse_create_response(chargers, response, current_time)
                 if plans:
@@ -505,7 +549,7 @@ class AnthropicChargingPlanner:
 
         payload = {
             "model": model,
-            "max_tokens": 8192,
+            "max_tokens": 16384,
             "temperature": 0,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": prompt}],
@@ -520,7 +564,7 @@ class AnthropicChargingPlanner:
                 ANTHROPIC_API_URL,
                 json=payload,
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60),
+                timeout=aiohttp.ClientTimeout(total=120),
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
