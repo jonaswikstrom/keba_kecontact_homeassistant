@@ -101,6 +101,7 @@ class ChargingPlan:
     total_cost: float = 0.0
     reasoning: str = ""
     status: str = "active"
+    initial_soc: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for storage."""
@@ -112,6 +113,7 @@ class ChargingPlan:
             "total_cost": self.total_cost,
             "reasoning": self.reasoning,
             "status": self.status,
+            "initial_soc": self.initial_soc,
         }
 
     @classmethod
@@ -125,6 +127,7 @@ class ChargingPlan:
             total_cost=data.get("total_cost", 0.0),
             reasoning=data.get("reasoning", ""),
             status=data.get("status", "active"),
+            initial_soc=data.get("initial_soc"),
         )
 
     def get_slot_for_time(self, hour: int, minute: int, date: str) -> ChargingSlot | None:

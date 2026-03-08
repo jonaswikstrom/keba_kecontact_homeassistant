@@ -363,8 +363,22 @@ class SmartCharger:
             now = datetime.now()
 
             if existing_plan and now < existing_plan.departure_time:
-                _log_info("Resuming existing plan for %s", entry_id)
-                self.hass.async_create_task(self._execute_plans(now))
+                current_soc = self._get_current_soc_for_entry(entry_id)
+                soc_threshold = 5.0
+                soc_changed = (
+                    existing_plan.initial_soc is not None
+                    and current_soc is not None
+                    and abs(current_soc - existing_plan.initial_soc) > soc_threshold
+                )
+                if soc_changed:
+                    _log_info(
+                        "SoC changed significantly for %s (%.1f%% -> %.1f%%), creating new plan",
+                        entry_id, existing_plan.initial_soc, current_soc
+                    )
+                    self.hass.async_create_task(self._on_car_connected(entry_id))
+                else:
+                    _log_info("Resuming existing plan for %s", entry_id)
+                    self.hass.async_create_task(self._execute_plans(now))
             else:
                 _log_info("Car connected to charger %s, creating new plan", entry_id)
                 self.hass.async_create_task(self._on_car_connected(entry_id))
@@ -528,9 +542,11 @@ class SmartCharger:
 
             self._last_error = None
             for plan in plans:
+                plan.initial_soc = self._get_current_soc_for_entry(plan.charger_id)
                 self._active_plans[plan.charger_id] = plan
-                _log_info("Created plan for %s: %d slots, total cost %.2f, reason: %s",
-                    plan.charger_id, len(plan.slots), plan.total_cost, plan.reasoning[:100])
+                _log_info("Created plan for %s: %d slots, total cost %.2f, initial_soc=%.1f%%, reason: %s",
+                    plan.charger_id, len(plan.slots), plan.total_cost,
+                    plan.initial_soc or 0, plan.reasoning[:100])
 
             _log_info("Applying initial slots after plan creation...")
             await self._execute_plans(datetime.now())
@@ -1083,6 +1099,13 @@ class SmartCharger:
         config_entry = entry_data.get("config_entry")
         if config_entry:
             return config_entry.options.get(CONF_VEHICLE_SOC_ENTITY)
+        return None
+
+    def _get_current_soc_for_entry(self, entry_id: str) -> float | None:
+        """Get the current SoC for a charger's configured vehicle."""
+        soc_entity = self._get_charger_soc_entity(entry_id)
+        if soc_entity:
+            return self._get_soc_normalized(soc_entity)
         return None
 
     def _get_charger_session_energy(self, entry_id: str) -> float | None:
