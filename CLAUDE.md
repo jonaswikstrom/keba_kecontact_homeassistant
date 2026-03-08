@@ -73,3 +73,15 @@ Tests mock Home Assistant dependencies in `conftest.py`. The mock structure allo
 
 Per-charger AI config: `vehicle_soc_entity`, `battery_capacity_kwh`, `departure_time`
 Coordinator config: `anthropic_api_key`, `nordpool_entity`, `coordinator_max_current`, `coordinator_strategy`
+
+## Local Home Assistant Environment
+
+Use the `/ha` skill for API access, SSH commands, and connection details (stored in `.claude/commands/ha.md`, gitignored).
+
+### Deployment
+
+**IMPORTANT:** Deployment is done via HACS and manually by the user. Do NOT use SCP commands to deploy.
+
+1. Push changes to the GitHub repo
+2. User updates via HACS in Home Assistant
+3. User restarts Home Assistant manually

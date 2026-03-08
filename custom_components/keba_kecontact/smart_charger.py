@@ -178,6 +178,20 @@ class SmartCharger:
             timedelta(minutes=30),
         )
 
+        _log_info("Smart charger started with %d chargers, max current %dA",
+            len(self._charger_entry_ids), self._max_current)
+
+        if self.hass.is_running:
+            self._setup_state_listeners()
+            self.hass.async_create_task(self._check_already_connected_cars())
+        else:
+            self._unsub_start_event = self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED,
+                self._on_homeassistant_started,
+            )
+
+    def _setup_state_listeners(self) -> None:
+        """Setup state change listeners for chargers (must be called after HA data is ready)."""
         for entry_id in self._charger_entry_ids:
             plugged_entity_id = self._get_plugged_on_ev_entity_id(entry_id)
             if plugged_entity_id:
@@ -189,6 +203,8 @@ class SmartCharger:
                 self._unsub_charger_states.append(unsub)
                 _log_info("Listening to plugged_on_ev: %s for charger %s",
                     plugged_entity_id, entry_id)
+            else:
+                _log_warning("Could not get plugged_on_ev entity for %s", entry_id)
 
             vehicle_status_entity = self._get_vehicle_charging_status_entity(entry_id)
             if vehicle_status_entity:
@@ -201,22 +217,12 @@ class SmartCharger:
                 _log_info("Listening to vehicle charging status: %s for charger %s",
                     vehicle_status_entity, entry_id)
 
-        _log_info("Smart charger started with %d chargers, max current %dA",
-            len(self._charger_entry_ids), self._max_current)
-
-        if self.hass.is_running:
-            self.hass.async_create_task(self._check_already_connected_cars())
-        else:
-            self._unsub_start_event = self.hass.bus.async_listen_once(
-                EVENT_HOMEASSISTANT_STARTED,
-                self._on_homeassistant_started,
-            )
-
     async def _on_homeassistant_started(self, event: Event) -> None:
         """Handle Home Assistant started event."""
         import asyncio
-        _log_info("Home Assistant started, waiting 2s before checking connected cars...")
+        _log_info("Home Assistant started, waiting 2s for data to be ready...")
         await asyncio.sleep(2)
+        self._setup_state_listeners()
         await self._check_already_connected_cars()
 
     async def _check_already_connected_cars(self) -> None:

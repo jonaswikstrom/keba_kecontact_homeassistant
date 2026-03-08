@@ -65,6 +65,9 @@ mock_ha.const.UnitOfElectricCurrent = MagicMock()
 mock_ha.data_entry_flow = create_mock_module("homeassistant.data_entry_flow")
 mock_ha.data_entry_flow.FlowResult = dict
 
+mock_ha.util = create_mock_module("homeassistant.util")
+mock_ha.util.dt = create_mock_module("homeassistant.util.dt")
+
 class SubscriptableMock(MagicMock):
     def __class_getitem__(cls, item):
         return cls
@@ -92,6 +95,8 @@ sys.modules["homeassistant.components.number"] = mock_ha.components.number
 sys.modules["homeassistant.components.select"] = mock_ha.components.select
 sys.modules["homeassistant.const"] = mock_ha.const
 sys.modules["homeassistant.data_entry_flow"] = mock_ha.data_entry_flow
+sys.modules["homeassistant.util"] = mock_ha.util
+sys.modules["homeassistant.util.dt"] = mock_ha.util.dt
 
 voluptuous_mock = MagicMock()
 sys.modules["voluptuous"] = voluptuous_mock
