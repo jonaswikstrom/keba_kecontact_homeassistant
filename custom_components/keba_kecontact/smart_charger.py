@@ -387,7 +387,7 @@ class SmartCharger:
             _log_info("Car unplugged from %s - pausing but keeping plan", entry_id)
             self.hass.async_create_task(self._pause_charger(entry_id))
 
-    CHARGING_DONE_STATES = {"done", "idle", "completed", "full", "finished", "not_charging"}
+    CHARGING_DONE_STATES = {"done", "completed", "full", "finished"}
 
     @callback
     def _handle_vehicle_status_change(self, event: Event) -> None:
