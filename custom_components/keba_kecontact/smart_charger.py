@@ -1070,18 +1070,13 @@ class SmartCharger:
         return None
 
     def _get_charger_max_current(self, entry_id: str) -> int:
-        """Get maximum current for a charger based on hardware and config limits."""
+        """Get maximum current for a charger based on hardware and coordinator limits."""
         entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
         coordinator = entry_data.get("coordinator")
-        config_entry = entry_data.get("config_entry")
 
         hw_limit = 32
         if coordinator and coordinator.data:
             hw_limit_ma = coordinator.data.get("curr_hw", 32000)
             hw_limit = int(hw_limit_ma / 1000)
 
-        user_limit = 32
-        if config_entry:
-            user_limit = config_entry.options.get("current_limit", 32)
-
-        return min(hw_limit, user_limit, self._max_current)
+        return min(hw_limit, self._max_current)
