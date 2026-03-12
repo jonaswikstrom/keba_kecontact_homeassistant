@@ -169,7 +169,6 @@ class ChargerRequirement:
     departure_time: datetime
     max_current_a: int
     target_soc: float = 100.0
-    historical_charging_rate_kw: float | None = None
 
 
 @dataclass
@@ -449,7 +448,6 @@ class AnthropicChargingPlanner:
         ]
 
         for i, c in enumerate(chargers, 1):
-            rate_info = f", historical rate: {c.historical_charging_rate_kw:.1f} kW" if c.historical_charging_rate_kw else ""
             lines.append(
                 f"{i}. {c.charger_name} (ID: {c.charger_id})"
             )
@@ -457,7 +455,7 @@ class AnthropicChargingPlanner:
                 f"   - Current SoC: {c.current_soc:.0f}%, Target SoC: {c.target_soc:.0f}%, Battery: {c.battery_capacity_kwh} kWh"
             )
             lines.append(
-                f"   - Departure: {c.departure_time.strftime('%Y-%m-%d %H:%M')}, Max current: {c.max_current_a}A{rate_info}"
+                f"   - Departure: {c.departure_time.strftime('%Y-%m-%d %H:%M')}, Max current: {c.max_current_a}A"
             )
 
         lines.append("")

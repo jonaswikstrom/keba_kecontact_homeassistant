@@ -46,7 +46,7 @@ async def async_setup_smart_charging_sensors(
                 )
             )
             entities.append(
-                ChargerChargingRateSensor(
+                ChargerChargingEfficiencySensor(
                     coordinator, entry, device_info, charger_entry_id, charger_entry.title
                 )
             )
@@ -329,11 +329,11 @@ class ChargerChargingPlanSensor(RestoreEntity, SensorEntity):
         }
 
 
-class ChargerChargingRateSensor(SensorEntity):
-    """Sensor showing historical charging rate for a charger."""
+class ChargerChargingEfficiencySensor(SensorEntity):
+    """Sensor showing charging efficiency (kWh per % SoC) for a charger."""
 
-    _attr_icon = "mdi:lightning-bolt"
-    _attr_native_unit_of_measurement = "kW"
+    _attr_icon = "mdi:battery-charging"
+    _attr_native_unit_of_measurement = "kWh/%"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     def __init__(
@@ -350,20 +350,20 @@ class ChargerChargingRateSensor(SensorEntity):
         self._charger_entry_id = charger_entry_id
         self._charger_name = charger_name
         self._attr_device_info = device_info
-        self._attr_unique_id = f"{entry.entry_id}_{charger_entry_id}_charging_rate"
+        self._attr_unique_id = f"{entry.entry_id}_{charger_entry_id}_charging_efficiency"
         self._attr_has_entity_name = True
-        self._attr_name = f"{charger_name} Charging Rate"
+        self._attr_name = f"{charger_name} Charging Efficiency"
 
     @property
     def native_value(self) -> float | None:
-        """Return historical charging rate."""
+        """Return charging efficiency (kWh per % SoC)."""
         if not self._coordinator.smart_charger:
             return None
 
-        rate = self._coordinator.smart_charger._history_tracker.get_expected_charging_rate(
+        efficiency = self._coordinator.smart_charger._history_tracker.get_charging_efficiency(
             self._charger_entry_id
         )
-        return round(rate, 1) if rate else None
+        return round(efficiency, 3) if efficiency else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -373,11 +373,9 @@ class ChargerChargingRateSensor(SensorEntity):
 
         tracker = self._coordinator.smart_charger._history_tracker
         sessions = tracker.get_sessions_for_charger(self._charger_entry_id)
-        efficiency = tracker.get_charging_efficiency(self._charger_entry_id)
 
         return {
             "sessions_recorded": len(sessions),
-            "efficiency_kwh_per_percent": round(efficiency, 3) if efficiency else None,
         }
 
 

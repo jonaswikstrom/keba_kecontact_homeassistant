@@ -461,53 +461,11 @@ class TestChargingHistory:
             start_soc=20.0,
             end_soc=80.0,
             energy_kwh=45.0,
-            avg_power_kw=9.0,
         )
 
-        assert session.avg_power_kw == 9.0
         assert session.energy_kwh == 45.0
         assert session.start_soc == 20.0
         assert session.end_soc == 80.0
-
-    def test_get_expected_charging_rate_no_sessions(self):
-        mock_hass = MagicMock()
-        tracker = ChargingHistoryTracker(mock_hass)
-
-        result = tracker.get_expected_charging_rate("unknown_charger")
-
-        assert result is None
-
-    def test_get_expected_charging_rate_with_sessions(self):
-        mock_hass = MagicMock()
-        tracker = ChargingHistoryTracker(mock_hass)
-        now = datetime.now()
-
-        tracker._data.sessions["charger_1"] = [
-            ChargingSession(
-                charger_entry_id="charger_1",
-                vehicle_soc_entity="sensor.car_soc",
-                start_time=now,
-                end_time=now + timedelta(hours=5),
-                start_soc=20.0,
-                end_soc=80.0,
-                energy_kwh=45.0,
-                avg_power_kw=9.0,
-            ),
-            ChargingSession(
-                charger_entry_id="charger_1",
-                vehicle_soc_entity="sensor.car_soc",
-                start_time=now,
-                end_time=now + timedelta(hours=4),
-                start_soc=30.0,
-                end_soc=90.0,
-                energy_kwh=42.0,
-                avg_power_kw=10.5,
-            ),
-        ]
-
-        result = tracker.get_expected_charging_rate("charger_1")
-
-        assert result == pytest.approx(9.75, rel=0.01)
 
     def test_get_charging_efficiency(self):
         mock_hass = MagicMock()
@@ -523,7 +481,6 @@ class TestChargingHistory:
                 start_soc=20.0,
                 end_soc=80.0,
                 energy_kwh=45.0,
-                avg_power_kw=9.0,
             ),
         ]
 
@@ -541,7 +498,7 @@ class TestChargingHistory:
                 charger_entry_id="charger_1",
                 vehicle_soc_entity="sensor.car_soc",
                 start_time=now, end_time=now + timedelta(hours=5),
-                start_soc=20.0, end_soc=80.0, energy_kwh=45.0, avg_power_kw=9.0,
+                start_soc=20.0, end_soc=80.0, energy_kwh=45.0,
             ),
         ]
         tracker._data.sessions["charger_2"] = [
@@ -549,7 +506,7 @@ class TestChargingHistory:
                 charger_entry_id="charger_2",
                 vehicle_soc_entity="sensor.car_soc",
                 start_time=now, end_time=now + timedelta(hours=4),
-                start_soc=30.0, end_soc=90.0, energy_kwh=42.0, avg_power_kw=10.5,
+                start_soc=30.0, end_soc=90.0, energy_kwh=42.0,
             ),
         ]
 

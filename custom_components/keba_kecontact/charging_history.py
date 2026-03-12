@@ -27,7 +27,6 @@ class ChargingSession:
     start_soc: float
     end_soc: float
     energy_kwh: float
-    avg_power_kw: float
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -39,7 +38,6 @@ class ChargingSession:
             "start_soc": self.start_soc,
             "end_soc": self.end_soc,
             "energy_kwh": self.energy_kwh,
-            "avg_power_kw": self.avg_power_kw,
         }
 
     @classmethod
@@ -53,7 +51,6 @@ class ChargingSession:
             start_soc=data["start_soc"],
             end_soc=data["end_soc"],
             energy_kwh=data["energy_kwh"],
-            avg_power_kw=data["avg_power_kw"],
         )
 
 
@@ -208,7 +205,7 @@ class ChargingHistoryTracker:
             _LOGGER.debug("No energy delivered, not recording session")
             return None
 
-        avg_power = energy_delivered / duration_hours
+        soc_gained = current_soc - active.start_soc
 
         session = ChargingSession(
             charger_entry_id=charger_entry_id,
@@ -218,7 +215,6 @@ class ChargingHistoryTracker:
             start_soc=active.start_soc,
             end_soc=current_soc,
             energy_kwh=energy_delivered,
-            avg_power_kw=avg_power,
         )
 
         if charger_entry_id not in self._data.sessions:
@@ -234,49 +230,15 @@ class ChargingHistoryTracker:
         await self.async_save()
 
         _LOGGER.info(
-            "Recorded charging session for %s: %.1f kWh in %.1f hours (avg %.1f kW)",
+            "Recorded charging session for %s: %.1f kWh, %.1f%% -> %.1f%% (+%.1f%%)",
             charger_entry_id,
             energy_delivered,
-            duration_hours,
-            avg_power,
+            active.start_soc,
+            current_soc,
+            soc_gained,
         )
 
         return session
-
-    def get_expected_charging_rate(
-        self,
-        charger_entry_id: str,
-        vehicle_soc_entity: str | None = None,
-    ) -> float | None:
-        """Get expected charging rate based on historical data."""
-        sessions = self._data.sessions.get(charger_entry_id, [])
-
-        if not sessions:
-            return None
-
-        if vehicle_soc_entity:
-            vehicle_sessions = [
-                s for s in sessions if s.vehicle_soc_entity == vehicle_soc_entity
-            ]
-            if vehicle_sessions:
-                sessions = vehicle_sessions
-
-        recent_sessions = sessions[-10:]
-
-        if not recent_sessions:
-            return None
-
-        total_power = sum(s.avg_power_kw for s in recent_sessions)
-        avg_rate = total_power / len(recent_sessions)
-
-        _LOGGER.debug(
-            "Expected charging rate for %s: %.1f kW (from %d sessions)",
-            charger_entry_id,
-            avg_rate,
-            len(recent_sessions),
-        )
-
-        return avg_rate
 
     def get_charging_efficiency(
         self,

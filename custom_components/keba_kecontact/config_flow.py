@@ -32,7 +32,6 @@ from .const import (
     CONF_ANTHROPIC_API_KEY,
     CONF_NORDPOOL_ENTITY,
     CONF_VEHICLE_SOC_ENTITY,
-    CONF_VEHICLE_CHARGING_STATUS_ENTITY,
     CONF_BATTERY_CAPACITY,
     CONF_DEPARTURE_TIME,
     CONF_TARGET_SOC,
@@ -215,12 +214,6 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_VEHICLE_SOC_ENTITY,
                     description={"suggested_value": options.get(CONF_VEHICLE_SOC_ENTITY)},
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor"),
-                ),
-                vol.Optional(
-                    CONF_VEHICLE_CHARGING_STATUS_ENTITY,
-                    description={"suggested_value": options.get(CONF_VEHICLE_CHARGING_STATUS_ENTITY)},
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor"),
                 ),
