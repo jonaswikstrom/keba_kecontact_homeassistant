@@ -102,6 +102,7 @@ class ChargingPlan:
     reasoning: str = ""
     status: str = "active"
     initial_soc: float | None = None
+    slot_minutes: int = 15
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for storage."""
@@ -114,6 +115,7 @@ class ChargingPlan:
             "reasoning": self.reasoning,
             "status": self.status,
             "initial_soc": self.initial_soc,
+            "slot_minutes": self.slot_minutes,
         }
 
     @classmethod
@@ -128,6 +130,7 @@ class ChargingPlan:
             reasoning=data.get("reasoning", ""),
             status=data.get("status", "active"),
             initial_soc=data.get("initial_soc"),
+            slot_minutes=data.get("slot_minutes", 15),
         )
 
     def get_slot_for_time(self, hour: int, minute: int, date: str) -> ChargingSlot | None:
@@ -144,18 +147,8 @@ class ChargingPlan:
         return None
 
     def _get_minutes_per_slot(self) -> int:
-        """Determine minutes per slot from the slots in this plan."""
-        if len(self.slots) < 2:
-            return 60
-
-        slots_sorted = sorted(self.slots, key=lambda s: (s.date, s.hour, s.minute))
-        for i in range(len(slots_sorted) - 1):
-            s1, s2 = slots_sorted[i], slots_sorted[i + 1]
-            if s1.date == s2.date:
-                diff = (s2.hour * 60 + s2.minute) - (s1.hour * 60 + s1.minute)
-                if diff > 0:
-                    return diff
-        return 60
+        """Return slot granularity from price sensor resolution."""
+        return self.slot_minutes
 
 
 @dataclass
@@ -372,6 +365,8 @@ class AnthropicChargingPlanner:
         if current_time is None:
             current_time = datetime.now()
 
+        slot_minutes = (24 * 60) // len(today_prices) if today_prices else 15
+
         prompt = self._build_create_prompt(
             chargers, total_max_current_a, today_prices, tomorrow_prices, current_time
         )
@@ -387,7 +382,7 @@ class AnthropicChargingPlanner:
 
                 self._add_payload(prompt, response, MODEL_SONNET)
 
-                plans = self._parse_create_response(chargers, response, current_time)
+                plans = self._parse_create_response(chargers, response, current_time, slot_minutes)
                 if plans:
                     return plans
 
@@ -601,6 +596,7 @@ class AnthropicChargingPlanner:
         chargers: list[ChargerRequirement],
         response: dict[str, Any],
         current_time: datetime,
+        slot_minutes: int = 15,
     ) -> list[ChargingPlan]:
         """Parse the API response into ChargingPlan objects."""
         import json
@@ -666,6 +662,7 @@ class AnthropicChargingPlanner:
                             total_cost=plan_data.get("total_cost", 0.0),
                             reasoning=reasoning,
                             status="active",
+                            slot_minutes=slot_minutes,
                         ))
                     except Exception as e:
                         _log_info("Failed to parse plan: %s, plan_data=%s", e, str(plan_data)[:500])

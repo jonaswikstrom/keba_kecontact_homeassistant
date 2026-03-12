@@ -93,7 +93,7 @@ class TestChargingSlot:
 
 
 class TestChargingPlan:
-    def test_get_slot_for_time_found_hourly(self):
+    def test_get_slot_for_time_found_exact(self):
         slots = [
             ChargingSlot(hour=14, minute=0, date="2024-01-15", current_amps=16, expected_soc_after=50, price=0.3, cost=1.0),
             ChargingSlot(hour=15, minute=0, date="2024-01-15", current_amps=20, expected_soc_after=65, price=0.4, cost=1.5),
@@ -105,7 +105,7 @@ class TestChargingPlan:
             slots=slots,
         )
 
-        result = plan.get_slot_for_time(15, 30, "2024-01-15")
+        result = plan.get_slot_for_time(15, 5, "2024-01-15")
 
         assert result is not None
         assert result.current_amps == 20
@@ -129,6 +129,32 @@ class TestChargingPlan:
         assert result is not None
         assert result.minute == 30
         assert result.current_amps == 24
+
+    def test_get_slot_for_time_non_consecutive_slots(self):
+        slots = [
+            ChargingSlot(hour=22, minute=45, date="2024-01-15", current_amps=10, expected_soc_after=11, price=0.01, cost=0.01),
+            ChargingSlot(hour=23, minute=45, date="2024-01-15", current_amps=10, expected_soc_after=20, price=0.01, cost=0.01),
+            ChargingSlot(hour=3, minute=0, date="2024-01-16", current_amps=10, expected_soc_after=30, price=0.01, cost=0.01),
+        ]
+        plan = ChargingPlan(
+            charger_id="test_charger",
+            created_at=datetime.now(),
+            departure_time=datetime.now() + timedelta(hours=10),
+            slots=slots,
+        )
+
+        result = plan.get_slot_for_time(22, 47, "2024-01-15")
+        assert result is not None
+        assert result.hour == 22
+        assert result.minute == 45
+
+        result = plan.get_slot_for_time(23, 50, "2024-01-15")
+        assert result is not None
+        assert result.hour == 23
+        assert result.minute == 45
+
+        result = plan.get_slot_for_time(23, 0, "2024-01-15")
+        assert result is None
 
     def test_get_slot_for_time_not_found(self):
         slots = [
