@@ -346,7 +346,7 @@ class SmartCharger:
 
         if old_value != "on" and new_value == "on":
             existing_plan = self._active_plans.get(entry_id)
-            now = datetime.now()
+            now = dt_util.now()
 
             if existing_plan and now < existing_plan.departure_time:
                 current_soc = self._get_current_soc_for_entry(entry_id)
@@ -490,7 +490,7 @@ class SmartCharger:
                     )
 
             _log_info("Applying initial slots after plan creation...")
-            await self._execute_plans(datetime.now())
+            await self._execute_plans(dt_util.now())
 
         except Exception as err:
             msg = f"AI planning failed: {err}"
@@ -839,7 +839,7 @@ class SmartCharger:
             _log_warning("Could not get SoC for %s from %s", entry_id, soc_entity)
             return None
 
-        now = datetime.now()
+        now = dt_util.now()
         departure_time = self._parse_departure_time(departure_time_str, now)
 
         max_current = 32
@@ -893,7 +893,7 @@ class SmartCharger:
             len(today_raw) if today_raw else 0,
             type(today_raw[0]).__name__ if today_raw else "empty")
 
-        today_date = datetime.now().date().isoformat()
+        today_date = dt_util.now().date().isoformat()
         today = self._extract_prices_to_slots(today_raw, today_date, multiplier)
 
         if not today:
@@ -911,7 +911,7 @@ class SmartCharger:
         tomorrow = None
         if state.attributes.get("tomorrow_available"):
             tomorrow_raw = state.attributes.get("prices_tomorrow", [])
-            tomorrow_date = (datetime.now().date() + timedelta(days=1)).isoformat()
+            tomorrow_date = (dt_util.now().date() + timedelta(days=1)).isoformat()
             tomorrow = self._extract_prices_to_slots(tomorrow_raw, tomorrow_date, multiplier)
             _log_info("Extracted %d price slots for tomorrow", len(tomorrow) if tomorrow else 0)
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import Any
 
@@ -340,7 +340,7 @@ class AnthropicChargingPlanner:
     def _add_payload(self, prompt: str, response: dict, model: str) -> None:
         """Add a payload to history, keeping only the latest entries."""
         entry = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "model": model,
             "prompt": prompt,
             "response": response,
@@ -363,7 +363,7 @@ class AnthropicChargingPlanner:
         import asyncio
 
         if current_time is None:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
 
         slot_minutes = (24 * 60) // len(today_prices) if today_prices else 15
 
