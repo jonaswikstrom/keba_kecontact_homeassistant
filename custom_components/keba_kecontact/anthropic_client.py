@@ -357,7 +357,6 @@ class AnthropicChargingPlanner:
         today_prices: list[PriceSlot],
         tomorrow_prices: list[PriceSlot] | None,
         current_time: datetime | None = None,
-        max_retries: int = 3,
     ) -> list[ChargingPlan]:
         """Create optimal charging plans for all chargers using Sonnet."""
         import asyncio
@@ -371,8 +370,9 @@ class AnthropicChargingPlanner:
             chargers, total_max_current_a, today_prices, tomorrow_prices, current_time
         )
 
+        retry_delays = [60, 300, 600]
         last_error = None
-        for attempt in range(max_retries):
+        for attempt in range(len(retry_delays) + 1):
             try:
                 response = await self._call_api(
                     model=MODEL_SONNET,
@@ -388,19 +388,21 @@ class AnthropicChargingPlanner:
 
             except ValueError as e:
                 last_error = e
-                if "No valid plans" in str(e) and attempt < max_retries - 1:
-                    _log_info("Retry %d/%d: Empty API response, waiting 2s before retry...",
-                        attempt + 1, max_retries)
-                    await asyncio.sleep(2)
+                if "No valid plans" in str(e) and attempt < len(retry_delays):
+                    delay = retry_delays[attempt]
+                    _log_info("Retry %d/%d: Empty API response, waiting %ds before retry...",
+                        attempt + 1, len(retry_delays), delay)
+                    await asyncio.sleep(delay)
                     continue
                 raise
 
             except Exception as e:
                 last_error = e
-                if attempt < max_retries - 1:
-                    _log_info("Retry %d/%d: API error '%s', waiting 2s before retry...",
-                        attempt + 1, max_retries, str(e)[:100])
-                    await asyncio.sleep(2)
+                if attempt < len(retry_delays):
+                    delay = retry_delays[attempt]
+                    _log_info("Retry %d/%d: API error '%s', waiting %ds before retry...",
+                        attempt + 1, len(retry_delays), str(e)[:100], delay)
+                    await asyncio.sleep(delay)
                     continue
                 raise
 
