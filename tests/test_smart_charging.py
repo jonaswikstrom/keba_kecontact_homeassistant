@@ -542,6 +542,296 @@ class TestChargingHistory:
         assert result[0].charger_entry_id == "charger_1"
 
 
+class TestCallApiErrorLogging:
+    @pytest.mark.asyncio
+    async def test_api_400_logs_error_text(self):
+        import aiohttp
+        from aiohttp import web
+        from custom_components.keba_kecontact.anthropic_client import ANTHROPIC_API_URL
+
+        planner = AnthropicChargingPlanner("fake_api_key")
+
+        with patch("custom_components.keba_kecontact.anthropic_client._log_info") as mock_log:
+            with patch("aiohttp.ClientSession.post") as mock_post:
+                mock_resp = AsyncMock()
+                mock_resp.status = 400
+                mock_resp.text = AsyncMock(return_value='{"error":{"message":"invalid model"}}')
+                mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+                mock_resp.__aexit__ = AsyncMock(return_value=False)
+                mock_post.return_value = mock_resp
+
+                with pytest.raises(RuntimeError, match="Anthropic API error: 400"):
+                    await planner._call_api(
+                        model="claude-sonnet",
+                        prompt="test",
+                        tools=[{"name": "test_tool"}],
+                    )
+
+                mock_log.assert_any_call(
+                    "Anthropic API error %d: %s", 400, '{"error":{"message":"invalid model"}}'
+                )
+
+    @pytest.mark.asyncio
+    async def test_api_success_returns_json(self):
+        planner = AnthropicChargingPlanner("fake_api_key")
+
+        with patch("aiohttp.ClientSession.post") as mock_post:
+            mock_resp = AsyncMock()
+            mock_resp.status = 200
+            mock_resp.json = AsyncMock(return_value={"content": [], "usage": {"input_tokens": 10, "output_tokens": 20}})
+            mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+            mock_resp.__aexit__ = AsyncMock(return_value=False)
+            mock_post.return_value = mock_resp
+
+            result = await planner._call_api(
+                model="claude-sonnet",
+                prompt="test",
+                tools=[{"name": "test_tool"}],
+            )
+
+            assert result["content"] == []
+
+
+class TestCatchupSlot:
+    def _make_charger(self):
+        from custom_components.keba_kecontact.smart_charger import SmartCharger
+        from custom_components.keba_kecontact.const import DOMAIN, CONF_VEHICLE_SOC_ENTITY, CONF_TARGET_SOC
+
+        mock_hass = MagicMock()
+        charger = SmartCharger(mock_hass, "api_key", "sensor.prices", [], 16)
+
+        config_entry = MagicMock()
+        config_entry.options = {
+            CONF_VEHICLE_SOC_ENTITY: "sensor.car_soc",
+            CONF_TARGET_SOC: 100.0,
+        }
+
+        mock_hass.data = {
+            DOMAIN: {
+                "charger_1": {
+                    "config_entry": config_entry,
+                    "coordinator": MagicMock(data={"curr_hw": 16000}),
+                },
+            }
+        }
+
+        mock_soc_state = MagicMock()
+        mock_soc_state.state = "80"
+        mock_soc_state.attributes = {"unit_of_measurement": "%"}
+
+        mock_price_state = MagicMock()
+        mock_price_state.attributes = {
+            "prices_today": [0.30 + i * 0.001 for i in range(96)],
+            "tomorrow_available": False,
+        }
+
+        def get_state(entity_id):
+            if entity_id == "sensor.car_soc":
+                return mock_soc_state
+            if entity_id == "sensor.prices":
+                return mock_price_state
+            return None
+
+        mock_hass.states.get.side_effect = get_state
+
+        return charger, mock_soc_state
+
+    def test_catchup_slot_created_when_soc_below_target(self):
+        charger, mock_soc = self._make_charger()
+        mock_soc.state = "80"
+
+        plan = ChargingPlan(
+            charger_id="charger_1",
+            created_at=datetime(2024, 1, 15, 22, 0),
+            departure_time=datetime(2024, 1, 16, 7, 30),
+            slots=[
+                ChargingSlot(hour=23, minute=0, date="2024-01-15", current_amps=10, expected_soc_after=100, price=0.3, cost=0.5),
+            ],
+            slot_minutes=15,
+        )
+
+        local_now = datetime(2024, 1, 16, 5, 33)
+
+        result = charger._create_catchup_slot("charger_1", plan, local_now, "2024-01-16")
+
+        assert result is not None
+        assert result.current_amps > 0
+        assert result.hour == 5
+        assert result.minute == 30
+
+    def test_no_catchup_when_soc_at_target(self):
+        charger, mock_soc = self._make_charger()
+        mock_soc.state = "100"
+
+        plan = ChargingPlan(
+            charger_id="charger_1",
+            created_at=datetime(2024, 1, 15, 22, 0),
+            departure_time=datetime(2024, 1, 16, 7, 30),
+            slots=[
+                ChargingSlot(hour=23, minute=0, date="2024-01-15", current_amps=10, expected_soc_after=100, price=0.3, cost=0.5),
+            ],
+            slot_minutes=15,
+        )
+
+        local_now = datetime(2024, 1, 16, 5, 33)
+
+        result = charger._create_catchup_slot("charger_1", plan, local_now, "2024-01-16")
+
+        assert result is None
+
+    def test_no_catchup_when_planned_slots_not_done(self):
+        charger, mock_soc = self._make_charger()
+        mock_soc.state = "50"
+
+        plan = ChargingPlan(
+            charger_id="charger_1",
+            created_at=datetime(2024, 1, 15, 22, 0),
+            departure_time=datetime(2024, 1, 16, 7, 30),
+            slots=[
+                ChargingSlot(hour=6, minute=0, date="2024-01-16", current_amps=10, expected_soc_after=100, price=0.3, cost=0.5),
+            ],
+            slot_minutes=15,
+        )
+
+        local_now = datetime(2024, 1, 16, 5, 33)
+
+        result = charger._create_catchup_slot("charger_1", plan, local_now, "2024-01-16")
+
+        assert result is None
+
+
+class TestPowerEfficiency:
+    def test_efficiency_calculated_from_sessions(self):
+        mock_hass = MagicMock()
+        tracker = ChargingHistoryTracker(mock_hass)
+        now = datetime.now()
+
+        tracker._data.sessions["charger_1"] = [
+            ChargingSession(
+                charger_entry_id="charger_1",
+                vehicle_soc_entity="sensor.car_soc",
+                start_time=now,
+                end_time=now + timedelta(hours=5),
+                start_soc=20.0,
+                end_soc=80.0,
+                energy_kwh=60.0,
+            ),
+        ]
+
+        result = tracker.get_power_efficiency("charger_1", battery_capacity_kwh=82.0)
+
+        expected = (60.0 / 100.0 * 82.0) / 60.0
+        assert result == pytest.approx(expected, rel=0.01)
+
+    def test_efficiency_none_when_no_sessions(self):
+        mock_hass = MagicMock()
+        tracker = ChargingHistoryTracker(mock_hass)
+
+        result = tracker.get_power_efficiency("charger_1", battery_capacity_kwh=82.0)
+
+        assert result is None
+
+    def test_efficiency_clamped_to_max_1(self):
+        mock_hass = MagicMock()
+        tracker = ChargingHistoryTracker(mock_hass)
+        now = datetime.now()
+
+        tracker._data.sessions["charger_1"] = [
+            ChargingSession(
+                charger_entry_id="charger_1",
+                vehicle_soc_entity="sensor.car_soc",
+                start_time=now,
+                end_time=now + timedelta(hours=5),
+                start_soc=20.0,
+                end_soc=80.0,
+                energy_kwh=10.0,
+            ),
+        ]
+
+        result = tracker.get_power_efficiency("charger_1", battery_capacity_kwh=82.0)
+
+        assert result == 1.0
+
+    def test_efficiency_filters_by_vehicle(self):
+        mock_hass = MagicMock()
+        tracker = ChargingHistoryTracker(mock_hass)
+        now = datetime.now()
+
+        tracker._data.sessions["charger_1"] = [
+            ChargingSession(
+                charger_entry_id="charger_1",
+                vehicle_soc_entity="sensor.polestar_soc",
+                start_time=now,
+                end_time=now + timedelta(hours=5),
+                start_soc=20.0,
+                end_soc=80.0,
+                energy_kwh=60.0,
+            ),
+            ChargingSession(
+                charger_entry_id="charger_1",
+                vehicle_soc_entity="sensor.volvo_soc",
+                start_time=now,
+                end_time=now + timedelta(hours=3),
+                start_soc=10.0,
+                end_soc=90.0,
+                energy_kwh=20.0,
+            ),
+        ]
+
+        result = tracker.get_power_efficiency(
+            "charger_1", battery_capacity_kwh=19.0, vehicle_soc_entity="sensor.volvo_soc"
+        )
+
+        expected = (80.0 / 100.0 * 19.0) / 20.0
+        assert result == pytest.approx(expected, rel=0.01)
+
+
+class TestPromptWithEfficiency:
+    def test_prompt_includes_learned_efficiency(self):
+        planner = AnthropicChargingPlanner("fake_api_key")
+
+        chargers = [
+            ChargerRequirement(
+                charger_id="charger_1",
+                charger_name="Garage",
+                current_soc=50.0,
+                battery_capacity_kwh=82.0,
+                departure_time=datetime(2024, 1, 16, 7, 0),
+                max_current_a=16,
+                charging_efficiency=0.72,
+            )
+        ]
+        today_prices = [PriceSlot(hour=h, minute=0, price=0.30, date="2024-01-15") for h in range(24)]
+
+        prompt = planner._build_create_prompt(
+            chargers, 16, today_prices, None, datetime(2024, 1, 15, 20, 0)
+        )
+
+        assert "Learned charging efficiency: 0.72" in prompt
+        assert "use instead of default 0.95" in prompt
+
+    def test_prompt_excludes_efficiency_when_none(self):
+        planner = AnthropicChargingPlanner("fake_api_key")
+
+        chargers = [
+            ChargerRequirement(
+                charger_id="charger_1",
+                charger_name="Garage",
+                current_soc=50.0,
+                battery_capacity_kwh=82.0,
+                departure_time=datetime(2024, 1, 16, 7, 0),
+                max_current_a=16,
+            )
+        ]
+        today_prices = [PriceSlot(hour=h, minute=0, price=0.30, date="2024-01-15") for h in range(24)]
+
+        prompt = planner._build_create_prompt(
+            chargers, 16, today_prices, None, datetime(2024, 1, 15, 20, 0)
+        )
+
+        assert "Learned charging efficiency" not in prompt
+
+
 class TestSmartChargerDepartureTime:
     def test_parse_departure_time_tomorrow(self):
         from custom_components.keba_kecontact.smart_charger import SmartCharger
