@@ -29,7 +29,6 @@ from .const import (
     PRIORITY_LOW,
     PRIORITY_NORMAL,
     PRIORITY_HIGH,
-    CONF_ANTHROPIC_API_KEY,
     CONF_NORDPOOL_ENTITY,
     CONF_VEHICLE_SOC_ENTITY,
     CONF_BATTERY_CAPACITY,
@@ -263,14 +262,6 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
 
         options_schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_ANTHROPIC_API_KEY,
-                    description={"suggested_value": options.get(CONF_ANTHROPIC_API_KEY, "")},
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(
-                        type=selector.TextSelectorType.PASSWORD,
-                    ),
-                ),
                 vol.Optional(
                     CONF_NORDPOOL_ENTITY,
                     description={"suggested_value": options.get(CONF_NORDPOOL_ENTITY)},

@@ -1,9 +1,8 @@
-"""Smart charging controller with AI-powered optimization."""
+"""Smart charging controller with algorithmic cost optimization."""
 from __future__ import annotations
 
 import logging
 import logging.handlers
-import os
 from datetime import datetime, timedelta, time
 from typing import Any, TYPE_CHECKING
 from pathlib import Path
@@ -16,13 +15,12 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .anthropic_client import (
-    AnthropicChargingPlanner,
+from .charging_planner import (
+    ChargingPlanner,
     ChargingPlan,
     ChargingSlot,
     ChargerRequirement,
     PriceSlot,
-    TokenUsage,
 )
 from .charging_history import ChargingHistoryTracker
 from .const import (
@@ -99,36 +97,31 @@ _FILE_LOG = _setup_file_logger()
 
 
 class SmartCharger:
-    """Manages AI-powered charging schedules for multiple chargers."""
+    """Manages cost-optimized charging schedules for multiple chargers."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        api_key: str,
         nordpool_entity_id: str,
         charger_entry_ids: list[str],
         max_current: int,
     ) -> None:
-        """Initialize the smart charger."""
         self.hass = hass
-        self._api_key = api_key
         self._nordpool_entity_id = nordpool_entity_id
         self._charger_entry_ids = charger_entry_ids
         self._max_current = max_current
 
-        self._planner = AnthropicChargingPlanner(api_key)
+        self._planner = ChargingPlanner()
         self._history_tracker = ChargingHistoryTracker(hass)
         self._active_plans: dict[str, ChargingPlan] = {}
 
         self._unsub_nordpool: callable | None = None
         self._unsub_interval: callable | None = None
-        self._unsub_progress_check: callable | None = None
         self._unsub_charger_states: list[callable] = []
         self._unsub_start_event: callable | None = None
 
         self._last_tomorrow_valid: bool | None = None
         self._planning_in_progress = False
-        self._last_progress_check: dict[str, float] = {}
         self._last_error: str | None = None
         self._last_applied_slot: dict[str, tuple[int, str]] = {}
         self._last_pause_reason: dict[str, str] = {}
@@ -141,11 +134,6 @@ class SmartCharger:
     def clear_error(self) -> None:
         """Clear the last error."""
         self._last_error = None
-
-    @property
-    def token_usage(self) -> TokenUsage:
-        """Return API token usage statistics."""
-        return self._planner.token_usage
 
     @property
     def active_plans(self) -> dict[str, ChargingPlan]:
@@ -170,12 +158,6 @@ class SmartCharger:
             self.hass,
             self._execute_plans,
             timedelta(minutes=1),
-        )
-
-        self._unsub_progress_check = async_track_time_interval(
-            self.hass,
-            self._check_charging_progress,
-            timedelta(minutes=30),
         )
 
         _log_info("Smart charger started with %d chargers, max current %dA",
@@ -229,10 +211,10 @@ class SmartCharger:
                 _log_info("  options: soc=%s, battery=%s, departure=%s",
                     opts.get('vehicle_soc_entity'), opts.get('battery_capacity_kwh'), opts.get('departure_time'))
 
-            ai_ready = self._is_charger_ai_ready(entry_id)
+            smart_ready = self._is_charger_smart_ready(entry_id)
             state_entity = self._get_state_entity_id(entry_id)
             state = self.hass.states.get(state_entity) if state_entity else None
-            _log_info("  ai_ready=%s, state_entity=%s, state=%s", ai_ready, state_entity, state.state if state else None)
+            _log_info("  smart_ready=%s, state_entity=%s, state=%s", smart_ready, state_entity, state.state if state else None)
 
         await self._detect_missed_disconnects()
 
@@ -254,9 +236,9 @@ class SmartCharger:
                                 current_soc,
                                 session_energy or 0,
                             )
-            await self._create_plans_for_chargers(connected)
+            self._create_plans_for_chargers(connected)
         else:
-            _log_info("No AI-ready connected chargers found at startup")
+            _log_info("No smart-charging-ready connected chargers found at startup")
 
     async def _detect_missed_disconnects(self) -> None:
         """Detect and end sessions for cars that disconnected while we were down."""
@@ -304,8 +286,6 @@ class SmartCharger:
             self._unsub_nordpool()
         if self._unsub_interval:
             self._unsub_interval()
-        if self._unsub_progress_check:
-            self._unsub_progress_check()
         for unsub in self._unsub_charger_states:
             unsub()
 
@@ -313,7 +293,7 @@ class SmartCharger:
 
     @callback
     def _handle_nordpool_change(self, event: Event) -> None:
-        """Handle Nordpool entity state changes."""
+        """Handle Nordpool entity state changes - recompute plans with new prices."""
         new_state = event.data.get("new_state")
         if not new_state:
             return
@@ -321,8 +301,10 @@ class SmartCharger:
         tomorrow_available = new_state.attributes.get("tomorrow_available", False)
 
         if self._last_tomorrow_valid is False and tomorrow_available is True:
-            _log_info("Tomorrow's prices now available, checking if replan needed")
-            self.hass.async_create_task(self._replan_overnight_if_needed())
+            _log_info("Tomorrow's prices now available, recomputing plans")
+            connected = list(self._active_plans.keys())
+            if connected:
+                self._create_plans_for_chargers(connected)
 
         self._last_tomorrow_valid = tomorrow_available
 
@@ -395,7 +377,7 @@ class SmartCharger:
                         session_energy or 0,
                     )
 
-            await self._create_plans_for_all_connected()
+            self._create_plans_for_all_connected()
         except Exception as err:
             _log_error("Failed to create charging plans: %s", err, exc_info=True)
         finally:
@@ -424,19 +406,19 @@ class SmartCharger:
                 "Replanning for remaining %d connected chargers",
                 len(remaining_connected)
             )
-            await self._create_plans_for_chargers(remaining_connected)
+            self._create_plans_for_chargers(remaining_connected)
 
-    async def _create_plans_for_all_connected(self) -> None:
+    def _create_plans_for_all_connected(self) -> None:
         """Create plans for all currently connected chargers."""
         connected = self._get_connected_chargers()
         if not connected:
-            _LOGGER.debug("No AI-configured chargers connected")
+            _LOGGER.debug("No smart-charging-configured chargers connected")
             return
 
-        await self._create_plans_for_chargers(connected)
+        self._create_plans_for_chargers(connected)
 
-    async def _create_plans_for_chargers(self, entry_ids: list[str]) -> None:
-        """Create AI charging plans for specified chargers."""
+    def _create_plans_for_chargers(self, entry_ids: list[str]) -> None:
+        """Create charging plans for specified chargers."""
         requirements = []
 
         for entry_id in entry_ids:
@@ -458,191 +440,71 @@ class SmartCharger:
             self._last_error = "No Nordpool prices available"
             return
 
-        _log_info("Calling AI planner with %d chargers, %d today slots",
-            len(requirements), len(today_prices))
-
-        try:
-            plans = await self._planner.create_plan(
-                chargers=requirements,
-                total_max_current_a=self._max_current,
-                today_prices=today_prices,
-                tomorrow_prices=tomorrow_prices,
-            )
-
-            self._last_error = None
-            for plan in plans:
-                plan.initial_soc = self._get_current_soc_for_entry(plan.charger_id)
-                self._active_plans[plan.charger_id] = plan
-                _log_info("Created plan for %s: %d slots, total cost %.2f, initial_soc=%.1f%%, reason: %s",
-                    plan.charger_id, len(plan.slots), plan.total_cost,
-                    plan.initial_soc or 0, plan.reasoning[:100])
-
-            for plan in plans:
-                first_slot = plan.slots[0] if plan.slots else None
-                if first_slot:
-                    _log_info(
-                        "Charger %s: Scheduled charging %s %02d:%02d - %s (departure %s)",
-                        plan.charger_id,
-                        first_slot.date,
-                        first_slot.hour,
-                        first_slot.minute,
-                        plan.departure_time.strftime("%H:%M"),
-                        plan.departure_time.strftime("%Y-%m-%d %H:%M"),
-                    )
-
-            _log_info("Applying initial slots after plan creation...")
-            await self._execute_plans(dt_util.now())
-
-        except Exception as err:
-            msg = f"AI planning failed: {err}"
-            _log_error(msg, exc_info=True)
-            self._last_error = msg
-
-    async def _check_charging_progress(self, now: datetime) -> None:
-        """Check if actual charging progress matches the plan, replan if needed."""
-        if not self._active_plans:
-            return
-
-        deviations = []
-
-        for entry_id, plan in self._active_plans.items():
-            soc_entity = self._get_charger_soc_entity(entry_id)
-            if not soc_entity:
-                continue
-
-            actual_soc = self._get_soc_normalized(soc_entity)
-            if actual_soc is None:
-                continue
-
-            local_now = dt_util.as_local(now)
-            current_hour = local_now.hour
-            current_minute = local_now.minute
-            current_date = local_now.date().isoformat()
-            slot = plan.get_slot_for_time(current_hour, current_minute, current_date)
-
-            if slot and slot.expected_soc_after > 0:
-                expected_soc = slot.expected_soc_after
-                deviation = abs(actual_soc - expected_soc)
-
-                _LOGGER.debug(
-                    "Charger %s: actual SoC %.1f%%, expected %.1f%%, deviation %.1f%%",
-                    entry_id, actual_soc, expected_soc, deviation
-                )
-
-                if deviation > 10:
-                    deviations.append({
-                        "charger_id": entry_id,
-                        "actual_soc": actual_soc,
-                        "expected_soc": expected_soc,
-                        "deviation": deviation,
-                    })
-
-        if deviations:
-            _log_info(
-                "Significant charging deviation detected: %s, validating with Haiku",
-                deviations
-            )
-
-            today_prices, tomorrow_prices = self._get_nordpool_prices()
-            if not today_prices:
-                return
-
-            try:
-                result = await self._planner.validate_plan(
-                    current_plans=list(self._active_plans.values()),
-                    new_prices_today=today_prices,
-                    new_prices_tomorrow=tomorrow_prices,
-                )
-
-                if result.replan_needed:
-                    _log_info(
-                        "Haiku recommends replan due to progress deviation: %s",
-                        result.reason
-                    )
-                    connected = list(self._active_plans.keys())
-                    await self._create_plans_for_chargers(connected)
-                else:
-                    _LOGGER.debug("Haiku says current plan is still OK: %s", result.reason)
-
-            except Exception as err:
-                _log_error("Progress validation failed: %s", err)
-
-    async def _replan_overnight_if_needed(self) -> None:
-        """Check if plans should be updated with new tomorrow prices."""
-        if not self._active_plans:
-            return
-
         now = dt_util.now()
-        overnight_plans = []
+        plans = self._planner.compute_plans(
+            chargers=requirements,
+            total_max_current=self._max_current,
+            today_prices=today_prices,
+            tomorrow_prices=tomorrow_prices,
+            now=now,
+        )
 
-        for plan in self._active_plans.values():
-            if plan.departure_time.date() > now.date():
-                overnight_plans.append(plan)
+        self._last_error = None
+        for plan in plans:
+            self._active_plans[plan.charger_id] = plan
+            _log_info("Created plan for %s: %d slots, cost %.2f SEK, SoC %.0f%%→%.0f%%",
+                plan.charger_id, len(plan.slots), plan.total_cost,
+                plan.initial_soc or 0,
+                plan.slots[-1].expected_soc_after if plan.slots else plan.initial_soc or 0)
 
-        if not overnight_plans:
-            _LOGGER.debug("No overnight plans to validate")
-            return
-
-        today_prices, tomorrow_prices = self._get_nordpool_prices()
-
-        if not tomorrow_prices:
-            _LOGGER.debug("Tomorrow prices still not available")
-            return
-
-        try:
-            result = await self._planner.validate_plan(
-                current_plans=overnight_plans,
-                new_prices_today=today_prices,
-                new_prices_tomorrow=tomorrow_prices,
-            )
-
-            if result.replan_needed:
-                _log_info("Replan needed: %s", result.reason)
-                connected = list(self._active_plans.keys())
-                await self._create_plans_for_chargers(connected)
-            else:
-                _LOGGER.debug("Current plans are still optimal: %s", result.reason)
-
-        except Exception as err:
-            _log_error("Plan validation failed: %s", err)
+        for plan in plans:
+            first_slot = plan.slots[0] if plan.slots else None
+            if first_slot:
+                _log_info(
+                    "Charger %s: Scheduled charging %s %02d:%02d - %s (departure %s)",
+                    plan.charger_id,
+                    first_slot.date,
+                    first_slot.hour,
+                    first_slot.minute,
+                    plan.departure_time.strftime("%H:%M"),
+                    plan.departure_time.strftime("%Y-%m-%d %H:%M"),
+                )
 
     async def _execute_plans(self, now: datetime) -> None:
-        """Execute charging plans - apply current time slot's settings with current clamping."""
+        """Recompute plans with actual SoC and apply current slot."""
+        if not self._active_plans:
+            return
+
         local_now = dt_util.as_local(now)
         current_hour = local_now.hour
         current_minute = local_now.minute
         current_date = local_now.date().isoformat()
 
-        if not self._active_plans:
-            return
-
         _log_debug("Executing plans for %d chargers at %s %02d:%02d",
             len(self._active_plans), current_date, current_hour, current_minute)
-
-        slots_to_apply: dict[str, tuple[Any, int]] = {}
-        chargers_to_pause: list[str] = []
 
         for entry_id, plan in list(self._active_plans.items()):
             if now >= plan.departure_time:
                 _log_info("Plan for %s expired (departure time passed)", entry_id)
                 del self._active_plans[entry_id]
                 await self._restore_charger_to_normal(entry_id)
-                continue
 
+        connected_with_plans = [eid for eid in self._active_plans]
+        if not connected_with_plans:
+            return
+
+        self._create_plans_for_chargers(connected_with_plans)
+
+        slots_to_apply: dict[str, tuple[Any, int]] = {}
+        chargers_to_pause: list[str] = []
+
+        for entry_id, plan in self._active_plans.items():
             slot = plan.get_slot_for_time(current_hour, current_minute, current_date)
-
             if slot:
                 charger_max = self._get_charger_max_current(entry_id)
                 slots_to_apply[entry_id] = (slot, charger_max)
             else:
-                catchup_slot = self._create_catchup_slot(
-                    entry_id, plan, local_now, current_date
-                )
-                if catchup_slot:
-                    charger_max = self._get_charger_max_current(entry_id)
-                    slots_to_apply[entry_id] = (catchup_slot, charger_max)
-                else:
-                    chargers_to_pause.append(entry_id)
+                chargers_to_pause.append(entry_id)
 
         for entry_id in chargers_to_pause:
             await self._pause_charger(entry_id, "no slot for current time")
@@ -650,122 +512,23 @@ class SmartCharger:
         if not slots_to_apply:
             return
 
-        requested: dict[str, int] = {}
-        for entry_id, (slot, charger_max) in slots_to_apply.items():
-            requested[entry_id] = min(slot.current_amps, charger_max)
-
-        total_requested = sum(requested.values())
-        if total_requested > self._max_current:
-            scale = self._max_current / total_requested
-            for entry_id in requested:
-                original = requested[entry_id]
-                requested[entry_id] = max(0, int(original * scale))
-            _log_warning("Total %dA exceeds max %dA, scaled down proportionally",
-                total_requested, self._max_current)
-
         for entry_id, (slot, _) in slots_to_apply.items():
-            clamped_amps = requested[entry_id]
-            await self._apply_slot(entry_id, slot, clamped_amps)
+            await self._apply_slot(entry_id, slot)
 
-    def _create_catchup_slot(
-        self,
-        entry_id: str,
-        plan: ChargingPlan,
-        local_now: datetime,
-        current_date: str,
-    ) -> ChargingSlot | None:
-        """Create an extra charging slot if actual SoC is behind the plan's target."""
-        soc_entity = self._get_charger_soc_entity(entry_id)
-        if not soc_entity:
-            return None
-
-        actual_soc = self._get_soc_normalized(soc_entity)
-        if actual_soc is None:
-            return None
-
-        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
-        config_entry = entry_data.get("config_entry")
-        if not config_entry:
-            return None
-
-        target_soc = config_entry.options.get(CONF_TARGET_SOC, 100.0)
-        if actual_soc >= target_soc:
-            return None
-
-        last_planned_slot = plan.slots[-1] if plan.slots else None
-        if not last_planned_slot:
-            return None
-
-        all_planned_done = True
-        for slot in plan.slots:
-            slot_time = datetime(
-                int(slot.date[:4]), int(slot.date[5:7]), int(slot.date[8:10]),
-                slot.hour, slot.minute,
-                tzinfo=local_now.tzinfo,
-            )
-            if slot_time + timedelta(minutes=plan.slot_minutes) > local_now:
-                all_planned_done = False
-                break
-
-        if not all_planned_done:
-            return None
-
-        today_prices, tomorrow_prices = self._get_nordpool_prices()
-        if not today_prices:
-            return None
-
-        current_price = None
-        for ps in today_prices:
-            if ps.hour == local_now.hour and ps.date == current_date:
-                slot_minute = (local_now.minute // plan.slot_minutes) * plan.slot_minutes
-                if ps.minute == slot_minute:
-                    current_price = ps.price
-                    break
-
-        if current_price is None and today_prices:
-            current_price = today_prices[-1].price
-
-        if current_price is None:
-            return None
-
-        charger_max = self._get_charger_max_current(entry_id)
-        current_amps = min(charger_max, self._max_current)
-
-        _log_info(
-            "Catch-up charging for %s: actual SoC %.1f%% < target %.1f%%, "
-            "adding slot at %dA (price %.4f)",
-            entry_id, actual_soc, target_soc, current_amps, current_price,
-        )
-
-        return ChargingSlot(
-            hour=local_now.hour,
-            minute=(local_now.minute // plan.slot_minutes) * plan.slot_minutes,
-            date=current_date,
-            current_amps=current_amps,
-            expected_soc_after=actual_soc,
-            price=current_price,
-            cost=0.0,
-        )
-
-    async def _apply_slot(self, entry_id: str, slot: Any, clamped_amps: int | None = None) -> None:
+    async def _apply_slot(self, entry_id: str, slot: Any) -> None:
         """Apply a charging slot's current setting to a charger via HA services."""
         serial = self._get_charger_serial(entry_id)
         if not serial:
             _log_warning("No serial found for charger %s", entry_id)
             return
 
-        current_amps = clamped_amps if clamped_amps is not None else slot.current_amps
-
+        current_amps = slot.current_amps
         switch_entity = f"switch.keba_kecontact_{serial}_charging_enabled"
         number_entity = f"number.keba_kecontact_{serial}_current_limit"
 
         slot_key = f"{slot.date}_{slot.hour:02d}:{slot.minute:02d}"
         last = self._last_applied_slot.get(entry_id)
         is_change = last is None or last != (current_amps, slot_key)
-
-        clamped_info = ""
-        if clamped_amps is not None and clamped_amps != slot.current_amps:
-            clamped_info = f" (AI wanted {slot.current_amps}A, clamped)"
 
         try:
             if current_amps == 0:
@@ -775,8 +538,8 @@ class SmartCharger:
                     blocking=True,
                 )
                 if is_change:
-                    _log_info("Charger %s: Paused (slot %s, price %.4f SEK)%s",
-                        entry_id, slot_key, slot.price, clamped_info)
+                    _log_info("Charger %s: Paused (slot %s, price %.4f SEK)",
+                        entry_id, slot_key, slot.price)
             else:
                 await self.hass.services.async_call(
                     "number", "set_value",
@@ -792,9 +555,9 @@ class SmartCharger:
                 if is_change:
                     soc_entity = self._get_charger_soc_entity(entry_id)
                     actual_soc = self._get_soc_normalized(soc_entity) if soc_entity else None
-                    soc_str = f"SoC {actual_soc:.0f}%" if actual_soc is not None else f"SoC→{slot.expected_soc_after:.0f}%"
-                    _log_info("Charger %s: %dA @ %.4f SEK (%s)%s",
-                        entry_id, current_amps, slot.price, soc_str, clamped_info)
+                    soc_str = f"SoC {actual_soc:.0f}%" if actual_soc is not None else ""
+                    _log_info("Charger %s: %dA @ %.4f SEK (%s)",
+                        entry_id, current_amps, slot.price, soc_str)
 
             if is_change:
                 self._last_applied_slot[entry_id] = (current_amps, slot_key)
@@ -873,7 +636,7 @@ class SmartCharger:
         connected = []
 
         for entry_id in self._charger_entry_ids:
-            if not self._is_charger_ai_ready(entry_id):
+            if not self._is_charger_smart_ready(entry_id):
                 continue
 
             plugged_entity = self._get_plugged_on_ev_entity_id(entry_id)
@@ -885,7 +648,7 @@ class SmartCharger:
 
         return connected
 
-    def _is_charger_ai_ready(self, entry_id: str) -> bool:
+    def _is_charger_smart_ready(self, entry_id: str) -> bool:
         """Check if charger has all required AI configuration."""
         entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
         config_entry: ConfigEntry | None = entry_data.get("config_entry")

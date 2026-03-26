@@ -16,7 +16,6 @@ COORDINATOR_STRATEGY_OFF = "off"
 COORDINATOR_STRATEGY_EQUAL = "equal"
 COORDINATOR_STRATEGY_SMART = "smart"
 
-CONF_ANTHROPIC_API_KEY = "anthropic_api_key"
 CONF_NORDPOOL_ENTITY = "nordpool_entity"
 CONF_VEHICLE_SOC_ENTITY = "vehicle_soc_entity"
 CONF_BATTERY_CAPACITY = "battery_capacity_kwh"

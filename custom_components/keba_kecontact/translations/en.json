@@ -38,13 +38,11 @@
       },
       "coordinator_options": {
         "title": "Coordinator Options",
-        "description": "Configure AI smart charging options.",
+        "description": "Configure smart charging options.",
         "data": {
-          "anthropic_api_key": "Anthropic API Key",
           "nordpool_entity": "Nordpool Price Entity"
         },
         "data_description": {
-          "anthropic_api_key": "Your Anthropic API key for AI-powered charging optimization. Get one at console.anthropic.com",
           "nordpool_entity": "Select the Nordpool sensor entity that provides electricity prices."
         }
       }

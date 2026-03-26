@@ -18,7 +18,6 @@ from .const import (
     CONF_COORDINATOR_CHARGERS,
     CONF_COORDINATOR_MAX_CURRENT,
     CONF_COORDINATOR_STRATEGY,
-    CONF_ANTHROPIC_API_KEY,
     CONF_NORDPOOL_ENTITY,
     DOMAIN,
 )
@@ -187,7 +186,6 @@ async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry)
         entry.data[CONF_COORDINATOR_STRATEGY]
     )
 
-    api_key = entry.options.get(CONF_ANTHROPIC_API_KEY)
     nordpool_entity = entry.options.get(CONF_NORDPOOL_ENTITY)
 
     coordinator = KebaChargingCoordinator(
@@ -196,7 +194,6 @@ async def async_setup_coordinator_entry(hass: HomeAssistant, entry: ConfigEntry)
         charger_entry_ids,
         max_current,
         strategy,
-        api_key=api_key,
         nordpool_entity=nordpool_entity,
     )
 

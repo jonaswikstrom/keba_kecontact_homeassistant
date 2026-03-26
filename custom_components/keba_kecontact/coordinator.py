@@ -18,7 +18,6 @@ from .const import (
     COORDINATOR_STRATEGY_OFF,
     COORDINATOR_STRATEGY_EQUAL,
     COORDINATOR_STRATEGY_SMART,
-    CONF_ANTHROPIC_API_KEY,
     CONF_NORDPOOL_ENTITY,
 )
 
@@ -40,7 +39,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         charger_entry_ids: list[str],
         max_current: int,
         strategy: str,
-        api_key: str | None = None,
         nordpool_entity: str | None = None,
     ) -> None:
         """Initialize the charging coordinator."""
@@ -57,7 +55,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._state_listener = None
         self._previous_active_count = 0
 
-        self._api_key = api_key
         self._nordpool_entity = nordpool_entity
         self._smart_charger: SmartCharger | None = None
 
@@ -83,16 +80,15 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._smart_charger = None
 
     async def _enable_smart_charging(self) -> None:
-        """Enable AI-powered smart charging."""
-        if not self._api_key or not self._nordpool_entity:
+        """Enable smart charging."""
+        if not self._nordpool_entity:
             _LOGGER.warning(
-                "Cannot enable smart charging: missing API key or Nordpool entity"
+                "Cannot enable smart charging: missing Nordpool entity"
             )
             return
 
         self._smart_charger = SmartCharger(
             hass=self.hass,
-            api_key=self._api_key,
             nordpool_entity_id=self._nordpool_entity,
             charger_entry_ids=self._charger_entry_ids,
             max_current=self._max_current,
@@ -197,8 +193,8 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._strategy == COORDINATOR_STRATEGY_SMART:
             if self._smart_charger and self._smart_charger.active_plans:
                 num_plans = len(self._smart_charger.active_plans)
-                return f"AI Smart - {num_plans} active plan(s)"
-            return "AI Smart - Waiting for cars"
+                return f"Smart - {num_plans} active plan(s)"
+            return "Smart - Waiting for cars"
 
         active_chargers = [
             entry_id for entry_id, state in charger_states.items()
@@ -442,7 +438,6 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the smart charger instance."""
         return self._smart_charger
 
-    def update_config(self, api_key: str | None, nordpool_entity: str | None) -> None:
+    def update_config(self, nordpool_entity: str | None) -> None:
         """Update configuration for smart charging."""
-        self._api_key = api_key
         self._nordpool_entity = nordpool_entity
