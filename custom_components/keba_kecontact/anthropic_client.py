@@ -162,6 +162,7 @@ class ChargerRequirement:
     departure_time: datetime
     max_current_a: int
     target_soc: float = 100.0
+    charging_efficiency: float | None = None
 
 
 @dataclass
@@ -191,7 +192,8 @@ CONSTRAINTS (MUST be satisfied):
 4. DEPARTURE TIME: Each vehicle must reach its target SoC by its departure time. ONLY schedule charging slots BEFORE the departure time.
 
 CHARGING CALCULATIONS:
-- Three-phase charging: Power (kW) = Current (A) × 230V × 3 × 0.95 / 1000
+- Three-phase charging: Power (kW) = Current (A) × 230V × 3 × efficiency / 1000
+- Default efficiency: 0.95 (95%). If a charger has a learned efficiency from previous sessions, use that instead.
 - Energy per slot (kWh) = Power (kW) × (slot_duration_minutes / 60)
 - SoC increase = Energy (kWh) / Battery capacity (kWh) × 100%
 
@@ -454,6 +456,10 @@ class AnthropicChargingPlanner:
             lines.append(
                 f"   - Departure: {c.departure_time.strftime('%Y-%m-%d %H:%M')}, Max current: {c.max_current_a}A"
             )
+            if c.charging_efficiency is not None:
+                lines.append(
+                    f"   - Learned charging efficiency: {c.charging_efficiency:.2f} (use instead of default 0.95)"
+                )
 
         lines.append("")
         lines.append("ELECTRICITY PRICES (per kWh):")

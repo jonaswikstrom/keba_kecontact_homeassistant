@@ -19,6 +19,7 @@ from homeassistant.util import dt as dt_util
 from .anthropic_client import (
     AnthropicChargingPlanner,
     ChargingPlan,
+    ChargingSlot,
     ChargerRequirement,
     PriceSlot,
     TokenUsage,
@@ -634,7 +635,14 @@ class SmartCharger:
                 charger_max = self._get_charger_max_current(entry_id)
                 slots_to_apply[entry_id] = (slot, charger_max)
             else:
-                chargers_to_pause.append(entry_id)
+                catchup_slot = self._create_catchup_slot(
+                    entry_id, plan, local_now, current_date
+                )
+                if catchup_slot:
+                    charger_max = self._get_charger_max_current(entry_id)
+                    slots_to_apply[entry_id] = (catchup_slot, charger_max)
+                else:
+                    chargers_to_pause.append(entry_id)
 
         for entry_id in chargers_to_pause:
             await self._pause_charger(entry_id, "no slot for current time")
@@ -658,6 +666,86 @@ class SmartCharger:
         for entry_id, (slot, _) in slots_to_apply.items():
             clamped_amps = requested[entry_id]
             await self._apply_slot(entry_id, slot, clamped_amps)
+
+    def _create_catchup_slot(
+        self,
+        entry_id: str,
+        plan: ChargingPlan,
+        local_now: datetime,
+        current_date: str,
+    ) -> ChargingSlot | None:
+        """Create an extra charging slot if actual SoC is behind the plan's target."""
+        soc_entity = self._get_charger_soc_entity(entry_id)
+        if not soc_entity:
+            return None
+
+        actual_soc = self._get_soc_normalized(soc_entity)
+        if actual_soc is None:
+            return None
+
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+        config_entry = entry_data.get("config_entry")
+        if not config_entry:
+            return None
+
+        target_soc = config_entry.options.get(CONF_TARGET_SOC, 100.0)
+        if actual_soc >= target_soc:
+            return None
+
+        last_planned_slot = plan.slots[-1] if plan.slots else None
+        if not last_planned_slot:
+            return None
+
+        all_planned_done = True
+        for slot in plan.slots:
+            slot_time = datetime(
+                int(slot.date[:4]), int(slot.date[5:7]), int(slot.date[8:10]),
+                slot.hour, slot.minute,
+                tzinfo=local_now.tzinfo,
+            )
+            if slot_time + timedelta(minutes=plan.slot_minutes) > local_now:
+                all_planned_done = False
+                break
+
+        if not all_planned_done:
+            return None
+
+        today_prices, tomorrow_prices = self._get_nordpool_prices()
+        if not today_prices:
+            return None
+
+        current_price = None
+        for ps in today_prices:
+            if ps.hour == local_now.hour and ps.date == current_date:
+                slot_minute = (local_now.minute // plan.slot_minutes) * plan.slot_minutes
+                if ps.minute == slot_minute:
+                    current_price = ps.price
+                    break
+
+        if current_price is None and today_prices:
+            current_price = today_prices[-1].price
+
+        if current_price is None:
+            return None
+
+        charger_max = self._get_charger_max_current(entry_id)
+        current_amps = min(charger_max, self._max_current)
+
+        _log_info(
+            "Catch-up charging for %s: actual SoC %.1f%% < target %.1f%%, "
+            "adding slot at %dA (price %.4f)",
+            entry_id, actual_soc, target_soc, current_amps, current_price,
+        )
+
+        return ChargingSlot(
+            hour=local_now.hour,
+            minute=(local_now.minute // plan.slot_minutes) * plan.slot_minutes,
+            date=current_date,
+            current_amps=current_amps,
+            expected_soc_after=actual_soc,
+            price=current_price,
+            cost=0.0,
+        )
 
     async def _apply_slot(self, entry_id: str, slot: Any, clamped_amps: int | None = None) -> None:
         """Apply a charging slot's current setting to a charger via HA services."""
@@ -702,8 +790,11 @@ class SmartCharger:
                 )
                 self._last_pause_reason.pop(entry_id, None)
                 if is_change:
-                    _log_info("Charger %s: %dA @ %.4f SEK (SoC→%.0f%%)%s",
-                        entry_id, current_amps, slot.price, slot.expected_soc_after, clamped_info)
+                    soc_entity = self._get_charger_soc_entity(entry_id)
+                    actual_soc = self._get_soc_normalized(soc_entity) if soc_entity else None
+                    soc_str = f"SoC {actual_soc:.0f}%" if actual_soc is not None else f"SoC→{slot.expected_soc_after:.0f}%"
+                    _log_info("Charger %s: %dA @ %.4f SEK (%s)%s",
+                        entry_id, current_amps, slot.price, soc_str, clamped_info)
 
             if is_change:
                 self._last_applied_slot[entry_id] = (current_amps, slot_key)
@@ -847,6 +938,12 @@ class SmartCharger:
             hw_limit = coordinator.data.get("curr_hw", 32000)
             max_current = min(int(hw_limit / 1000), self._max_current)
 
+        efficiency = self._history_tracker.get_power_efficiency(
+            entry_id, battery_capacity, soc_entity
+        )
+        if efficiency is not None:
+            _log_info("Charger %s: learned efficiency %.2f from history", entry_id, efficiency)
+
         return ChargerRequirement(
             charger_id=entry_id,
             charger_name=config_entry.title,
@@ -855,6 +952,7 @@ class SmartCharger:
             departure_time=departure_time,
             max_current_a=max_current,
             target_soc=float(target_soc),
+            charging_efficiency=efficiency,
         )
 
     def _parse_departure_time(self, time_str: str, now: datetime) -> datetime:

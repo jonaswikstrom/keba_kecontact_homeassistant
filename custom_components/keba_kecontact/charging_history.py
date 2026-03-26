@@ -278,6 +278,45 @@ class ChargingHistoryTracker:
 
         return kwh_per_percent
 
+    def get_power_efficiency(
+        self,
+        charger_entry_id: str,
+        battery_capacity_kwh: float,
+        vehicle_soc_entity: str | None = None,
+    ) -> float | None:
+        """Calculate power efficiency factor (0-1) to replace default 0.95.
+
+        Compares energy delivered by charger vs theoretical energy needed
+        based on SoC change and battery capacity.
+        """
+        sessions = self._data.sessions.get(charger_entry_id, [])
+        if not sessions:
+            return None
+
+        if vehicle_soc_entity:
+            filtered = [s for s in sessions if s.vehicle_soc_entity == vehicle_soc_entity]
+            if filtered:
+                sessions = filtered
+
+        valid = [
+            s for s in sessions
+            if s.end_soc > s.start_soc and s.energy_kwh > 0
+        ]
+        if not valid:
+            return None
+
+        recent = valid[-10:]
+        total_energy_delivered = sum(s.energy_kwh for s in recent)
+        total_soc_gained = sum(s.end_soc - s.start_soc for s in recent)
+
+        if total_soc_gained <= 0 or total_energy_delivered <= 0:
+            return None
+
+        theoretical_energy = total_soc_gained / 100.0 * battery_capacity_kwh
+        efficiency = theoretical_energy / total_energy_delivered
+
+        return max(0.1, min(1.0, efficiency))
+
     def is_session_active(self, charger_entry_id: str) -> bool:
         """Check if a session is currently being tracked."""
         return charger_entry_id in self._active_sessions
