@@ -576,6 +576,7 @@ class AnthropicChargingPlanner:
                 if response.status != 200:
                     error_text = await response.text()
                     _LOGGER.error("Anthropic API error %d: %s", response.status, error_text)
+                    _log_error("Anthropic API error %d: %s", response.status, error_text[:500])
                     raise RuntimeError(f"Anthropic API error: {response.status}")
 
                 result = await response.json()
