@@ -629,10 +629,7 @@ class SmartCharger:
             _log_error("Failed to pause charger %s: %s", entry_id, err)
 
     def _get_connected_chargers(self) -> list[str]:
-        """Get list of chargers with cars connected and AI config complete.
-
-        Uses plugged_on_ev binary sensor to detect if car is physically connected.
-        """
+        """Get list of chargers with cars connected and smart charging config complete."""
         connected = []
 
         for entry_id in self._charger_entry_ids:
@@ -649,7 +646,7 @@ class SmartCharger:
         return connected
 
     def _is_charger_smart_ready(self, entry_id: str) -> bool:
-        """Check if charger has all required AI configuration."""
+        """Check if charger has all required smart charging configuration."""
         entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
         config_entry: ConfigEntry | None = entry_data.get("config_entry")
 
@@ -663,7 +660,7 @@ class SmartCharger:
 
         is_ready = bool(soc_entity and battery and departure)
         _LOGGER.debug(
-            "Charger %s AI ready check: soc=%s, battery=%s, departure=%s -> %s",
+            "Charger %s smart ready check: soc=%s, battery=%s, departure=%s -> %s",
             entry_id, soc_entity, battery, departure, is_ready
         )
 

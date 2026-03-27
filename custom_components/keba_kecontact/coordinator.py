@@ -97,7 +97,7 @@ class KebaChargingCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.info("Smart charging enabled with Nordpool entity: %s", self._nordpool_entity)
 
     async def _disable_smart_charging(self) -> None:
-        """Disable AI-powered smart charging."""
+        """Disable smart charging."""
         if self._smart_charger:
             await self._smart_charger.async_stop()
             self._smart_charger = None

@@ -31,9 +31,9 @@
           "departure_time": "Departure Time"
         },
         "data_description": {
-          "vehicle_soc_entity": "Select the sensor entity that reports your vehicle's current battery level (SoC). Required for AI smart charging.",
-          "battery_capacity_kwh": "Total battery capacity of the vehicle in kWh. Used by AI to calculate charging time.",
-          "departure_time": "Time when you need the vehicle ready. AI will optimize charging to finish by this time."
+          "vehicle_soc_entity": "Select the sensor entity that reports your vehicle's current battery level (SoC). Required for smart charging.",
+          "battery_capacity_kwh": "Total battery capacity of the vehicle in kWh. Used to calculate charging time.",
+          "departure_time": "Time when you need the vehicle ready. Smart charging will optimize charging to finish by this time."
         }
       },
       "coordinator_options": {
@@ -126,13 +126,13 @@
         "state": {
           "off": "Off",
           "equal": "Equal Distribution",
-          "smart": "AI Smart Charging"
+          "smart": "Smart Charging"
         }
       }
     },
     "binary_sensor": {
-      "ai_charging_active": {
-        "name": "AI Charging Active"
+      "smart_charging_active": {
+        "name": "Smart Charging Active"
       }
     }
   }

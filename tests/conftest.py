@@ -58,6 +58,8 @@ mock_ha.components.select.SelectEntity = MagicMock
 
 mock_ha.const = create_mock_module("homeassistant.const")
 mock_ha.const.CONF_IP_ADDRESS = "ip_address"
+mock_ha.const.EVENT_HOMEASSISTANT_STARTED = "homeassistant_started"
+mock_ha.const.EVENT_STATE_CHANGED = "state_changed"
 mock_ha.const.UnitOfPower = MagicMock()
 mock_ha.const.UnitOfEnergy = MagicMock()
 mock_ha.const.UnitOfElectricCurrent = MagicMock()
@@ -68,13 +70,29 @@ mock_ha.data_entry_flow.FlowResult = dict
 mock_ha.util = create_mock_module("homeassistant.util")
 mock_ha.util.dt = create_mock_module("homeassistant.util.dt")
 
-class SubscriptableMock(MagicMock):
+class FakeDataUpdateCoordinator:
     def __class_getitem__(cls, item):
         return cls
 
+    def __init__(self, hass=None, *args, **kwargs):
+        self.hass = hass
+
+    async def async_refresh(self):
+        pass
+
+    async def async_request_refresh(self):
+        pass
+
+
+class FakeCoordinatorEntity:
+    def __class_getitem__(cls, item):
+        return cls
+
+
 mock_ha.helpers.update_coordinator = create_mock_module("homeassistant.helpers.update_coordinator")
-mock_ha.helpers.update_coordinator.DataUpdateCoordinator = SubscriptableMock
-mock_ha.helpers.update_coordinator.CoordinatorEntity = SubscriptableMock
+mock_ha.helpers.update_coordinator.DataUpdateCoordinator = FakeDataUpdateCoordinator
+mock_ha.helpers.update_coordinator.CoordinatorEntity = FakeCoordinatorEntity
+mock_ha.helpers.update_coordinator.UpdateFailed = Exception
 
 sys.modules["homeassistant"] = mock_ha
 sys.modules["homeassistant.core"] = mock_ha.core

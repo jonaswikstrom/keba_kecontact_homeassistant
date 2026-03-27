@@ -38,18 +38,17 @@ When 2+ chargers exist without a coordinator, one is auto-created.
 
 **Load Balancing** (`coordinator.py`)
 - `KebaChargingCoordinator` - Manages current distribution across chargers
-- Strategies: `off`, `equal` (split evenly), `smart` (AI-powered)
+- Strategies: `off`, `equal` (split evenly), `smart` (cost-optimized)
 
-**AI Smart Charging** (`smart_charger.py`, `anthropic_client.py`)
-- Uses Anthropic API (Sonnet for planning, Haiku for validation)
-- Integrates with Nordpool electricity prices
-- Creates hourly charging schedules optimizing for cost
+**Smart Charging** (`smart_charger.py`)
+- Algorithmic cost optimizer using Nordpool electricity prices
+- Creates charging schedules optimizing for lowest cost
 - Tracks charging history for efficiency estimates (`charging_history.py`)
 
 **Entity Structure**
 - Per-charger: sensors, binary_sensors, switches, numbers, buttons, lock, notify
 - Coordinator-level: aggregate sensors, strategy select, max current number
-- Smart charging: status and AI reasoning sensors (`smart_charging_sensor.py`)
+- Smart charging: status, reasoning, cost, and next-window sensors (`smart_charging_sensor.py`)
 
 ### Data Flow
 
@@ -61,7 +60,7 @@ When 2+ chargers exist without a coordinator, one is auto-created.
 
 1. Car connection detected via charger state sensor change
 2. `SmartCharger._on_car_connected()` triggers planning
-3. `AnthropicChargingPlanner.create_plan()` calls API with requirements and Nordpool prices
+3. Algorithmic optimizer creates cost-optimized plan using Nordpool prices
 4. Plans stored in `_active_plans`, executed minute-by-minute
 5. Nordpool `tomorrow_available` change triggers overnight replan validation
 
@@ -71,8 +70,8 @@ Tests mock Home Assistant dependencies in `conftest.py`. The mock structure allo
 
 ## Configuration Options
 
-Per-charger AI config: `vehicle_soc_entity`, `battery_capacity_kwh`, `departure_time`
-Coordinator config: `anthropic_api_key`, `nordpool_entity`, `coordinator_max_current`, `coordinator_strategy`
+Per-charger config: `vehicle_soc_entity`, `battery_capacity_kwh`, `departure_time`
+Coordinator config: `nordpool_entity`, `coordinator_max_current`, `coordinator_strategy`
 
 ## Local Home Assistant Environment
 

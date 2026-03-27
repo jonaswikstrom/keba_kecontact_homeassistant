@@ -254,7 +254,7 @@ class KebaKeContactOptionsFlow(config_entries.OptionsFlow):
     async def async_step_coordinator_options(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage options for coordinator including AI smart charging."""
+        """Manage options for coordinator including smart charging."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 

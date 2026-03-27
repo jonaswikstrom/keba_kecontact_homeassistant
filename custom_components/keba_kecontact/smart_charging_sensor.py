@@ -108,7 +108,7 @@ class SmartChargingStatusSensor(RestoreEntity, SensorEntity):
 class SmartChargingCostSensor(SensorEntity):
     """Sensor showing estimated total charging cost."""
 
-    _attr_icon = "mdi:currency-eur"
+    _attr_icon = "mdi:currency-usd"
     _attr_state_class = SensorStateClass.TOTAL
 
     def __init__(
@@ -141,11 +141,11 @@ class SmartChargingCostSensor(SensorEntity):
     @property
     def native_unit_of_measurement(self) -> str:
         """Return the unit."""
-        return "EUR"
+        return "SEK"
 
 
 class SmartChargingReasoningSensor(SensorEntity):
-    """Sensor showing AI reasoning for the current plan."""
+    """Sensor showing reasoning for the current plan."""
 
     _attr_icon = "mdi:head-lightbulb"
 
@@ -165,7 +165,7 @@ class SmartChargingReasoningSensor(SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        """Return the AI reasoning."""
+        """Return the charging reasoning."""
         if not self._coordinator.smart_charger:
             return None
 
@@ -234,7 +234,7 @@ class SmartChargingNextWindowSensor(SensorEntity):
                     else:
                         break
 
-                slot_duration = plan._get_minutes_per_slot()
+                slot_duration = plan.slot_minutes
                 end_minutes = last_slot.hour * 60 + last_slot.minute + slot_duration
                 window_end = f"{end_minutes // 60:02d}:{end_minutes % 60:02d}"
 
@@ -247,7 +247,7 @@ class SmartChargingNextWindowSensor(SensorEntity):
 
 
 class SmartChargingActiveBinarySensor(BinarySensorEntity):
-    """Binary sensor indicating if AI is currently controlling any charger."""
+    """Binary sensor indicating if smart charging is currently controlling any charger."""
 
     _attr_icon = "mdi:robot-outline"
 
@@ -267,7 +267,7 @@ class SmartChargingActiveBinarySensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return if AI charging is active."""
+        """Return if smart charging is active."""
         if not self._coordinator.smart_charger:
             return False
 
