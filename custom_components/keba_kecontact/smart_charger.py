@@ -328,6 +328,16 @@ class SmartCharger:
         _log_info("Plugged state change for %s: %s -> %s", entry_id, old_value, new_value)
 
         if old_value != "on" and new_value == "on":
+            if not self._is_charger_smart_ready(entry_id):
+                entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+                config_entry = entry_data.get("config_entry")
+                if config_entry:
+                    limit = config_entry.options.get("current_limit", 16)
+                    self.hass.async_create_task(
+                        self._send_display(entry_id, f"Connected {limit}A")
+                    )
+                return
+
             existing_plan = self._active_plans.get(entry_id)
             now = dt_util.now()
 
@@ -386,6 +396,8 @@ class SmartCharger:
     async def _on_car_disconnected(self, entry_id: str) -> None:
         """Handle car disconnection."""
         if entry_id in self._active_plans:
+            plan = self._active_plans[entry_id]
+            await self._send_done_display(entry_id, plan)
             del self._active_plans[entry_id]
             _log_info("Removed plan for disconnected charger %s", entry_id)
 
@@ -458,6 +470,13 @@ class SmartCharger:
                 plan.slots[-1].expected_soc_after if plan.slots else plan.initial_soc or 0)
 
         for plan in plans:
+            dep = plan.departure_time.strftime("%H:%M")
+            cost = f"{plan.total_cost:.0f}" if plan.total_cost >= 10 else f"{plan.total_cost:.1f}"
+            self.hass.async_create_task(
+                self._send_display(plan.charger_id, f"Ready {dep} {cost} SEK")
+            )
+
+        for plan in plans:
             first_slot = plan.slots[0] if plan.slots else None
             if first_slot:
                 _log_info(
@@ -485,6 +504,7 @@ class SmartCharger:
 
         for entry_id, plan in list(self._active_plans.items()):
             if now >= plan.departure_time:
+                await self._send_done_display(entry_id, plan)
                 _log_info("Plan for %s expired (departure time passed)", entry_id)
                 del self._active_plans[entry_id]
                 await self._restore_charger_to_normal(entry_id)
@@ -540,6 +560,13 @@ class SmartCharger:
                 if is_change:
                     _log_info("Charger %s: Paused (slot %s, price %.4f SEK)",
                         entry_id, slot_key, slot.price)
+                    plan = self._active_plans.get(entry_id)
+                    if plan:
+                        nxt = self._find_next_active_slot(plan, dt_util.now())
+                        if nxt:
+                            await self._send_display(entry_id, f"Pause next {nxt.hour:02d}:{nxt.minute:02d}")
+                        else:
+                            await self._send_display(entry_id, "Pause")
             else:
                 await self.hass.services.async_call(
                     "number", "set_value",
@@ -558,6 +585,8 @@ class SmartCharger:
                     soc_str = f"SoC {actual_soc:.0f}%" if actual_soc is not None else ""
                     _log_info("Charger %s: %dA @ %.4f SEK (%s)",
                         entry_id, current_amps, slot.price, soc_str)
+                    price_str = f"{slot.price:.2f}" if slot.price < 10 else f"{slot.price:.1f}"
+                    await self._send_display(entry_id, f"Charging {current_amps}A {price_str}kr")
 
             if is_change:
                 self._last_applied_slot[entry_id] = (current_amps, slot_key)
@@ -621,6 +650,9 @@ class SmartCharger:
                             "Paused charger %s (waiting for scheduled start at %s %02d:%02d)",
                             entry_id, first_slot.date, first_slot.hour, first_slot.minute
                         )
+                        nxt = self._find_next_active_slot(plan, dt_util.now())
+                        if nxt:
+                            await self._send_display(entry_id, f"Pause next {nxt.hour:02d}:{nxt.minute:02d}")
                     else:
                         _log_info("Paused charger %s (%s)", entry_id, reason)
                 else:
@@ -841,6 +873,46 @@ class SmartCharger:
                 date=date,
             ))
         return slots
+
+    def _get_client(self, entry_id: str):
+        entry_data = self.hass.data.get(DOMAIN, {}).get(entry_id, {})
+        return entry_data.get("client")
+
+    async def _send_display(self, entry_id: str, message: str) -> None:
+        client = self._get_client(entry_id)
+        if not client:
+            return
+        text = message.replace(" ", "$")[:23]
+        try:
+            await client.send_command(f"display 1 5 15 0 {text}")
+        except Exception:
+            _LOGGER.debug("Display message failed for %s", entry_id)
+
+    async def _send_done_display(self, entry_id: str, plan: ChargingPlan) -> None:
+        energy = self._get_charger_session_energy(entry_id)
+        energy_str = f"{energy:.0f}" if energy else "?"
+        try:
+            total_cost = float(plan.total_cost)
+            cost = f"{total_cost:.0f}" if total_cost >= 10 else f"{total_cost:.1f}"
+        except (TypeError, ValueError):
+            cost = "?"
+        await self._send_display(entry_id, f"Done {energy_str}kWh {cost}SEK")
+
+    def _find_next_active_slot(self, plan: ChargingPlan, now: datetime) -> ChargingSlot | None:
+        local_now = dt_util.as_local(now)
+        current_date = local_now.date().isoformat()
+        for slot in plan.slots:
+            if slot.current_amps == 0:
+                continue
+            if slot.date > current_date or (
+                slot.date == current_date
+                and (
+                    slot.hour > local_now.hour
+                    or (slot.hour == local_now.hour and slot.minute > local_now.minute)
+                )
+            ):
+                return slot
+        return None
 
     def _get_charger_serial(self, entry_id: str) -> str | None:
         """Get charger serial number from entry ID."""
