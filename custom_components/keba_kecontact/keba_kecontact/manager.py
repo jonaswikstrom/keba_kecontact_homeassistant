@@ -58,6 +58,7 @@ class KebaUdpManager:
             cls._instance._handler = None
             cls._instance._client_count = 0
             cls._instance._started = False
+            cls._instance._poll_lock = asyncio.Lock()
 
         return cls._instance
 
@@ -137,6 +138,10 @@ class KebaUdpManager:
             if self._client_count > 0:
                 self._client_count -= 1
                 _LOGGER.debug(f"Client unregistered, total clients: {self._client_count}")
+
+    @property
+    def poll_lock(self) -> asyncio.Lock:
+        return self._poll_lock
 
     @property
     def is_started(self) -> bool:

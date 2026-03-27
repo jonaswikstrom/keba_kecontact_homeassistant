@@ -27,6 +27,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .keba_kecontact.client import KebaClient
+from .keba_kecontact.manager import KebaUdpManager
 
 from .const import DOMAIN
 from .sensor_diagnostic import (
@@ -125,10 +126,16 @@ class KebaDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=SCAN_INTERVAL,
         )
         self._client = client
+        self._poll_lock = KebaUdpManager.get_instance().poll_lock
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Keba charger."""
         _LOGGER.debug("Polling charger %s for updates", self._client.ip_address)
+        async with self._poll_lock:
+            return await self._poll_charger()
+
+    async def _poll_charger(self) -> dict[str, Any]:
+        """Poll charger while holding the shared lock."""
         try:
             report1 = await self._client.get_report_1()
             report2 = await self._client.get_report_2()
